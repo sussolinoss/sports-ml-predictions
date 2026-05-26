@@ -235,6 +235,28 @@ run (2026), the number of rounds is not the final one, so ``races left'' was
 computed as zero. I set the expected calendar length for the current season so
 that the remaining races are counted correctly.
 
+\subsection{Pipeline}
+The pre-race pipeline, from raw results to a calibrated podium probability, is:
+\begin{verbatim}
+download results (Ergast/Jolpica, 1950-2026)
+sort races by season and round
+for each race, in time order:
+    read state -> grid, quali gap, driver and
+                  constructor form, podium rate,
+                  track history, lag, recovery
+    write feature row
+    update state with the real result   # only now
+split by season: train / val / test
+weight train races by exp(-age / tau)   # time-decay
+train CatBoost on train, early stop on val
+fit isotonic calibrator on val
+evaluate precision@3, NDCG@3, Brier on test
+\end{verbatim}
+The order inside the loop is the state-before-event rule: a race's features are
+written before its result updates the ratings and rolling counters. The season
+model follows the same shape, with championship-state features and a
+softmax-plus-temperature step instead of the isotonic calibrator.
+
 \subsection{Features Used}
 The race feature vector is made of a few groups, all reasoned out from how a
 Grand Prix actually works.
