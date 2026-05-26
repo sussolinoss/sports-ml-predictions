@@ -7,8 +7,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/models-CatBoost%20%7C%20XGBoost-512BD4.svg" alt="Models">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT">
-  <img src="https://img.shields.io/badge/status-research-orange.svg" alt="Status">
+  <img src="https://img.shields.io/badge/license-CC%20BY%204.0-green.svg" alt="License: CC BY 4.0">
+  <a href="https://zenodo.org/records/20402346"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20402346-blue.svg" alt="DOI"></a>
 </p>
 
 <p align="center">
@@ -113,6 +113,14 @@ The same pipeline applied to both sports:
 - **Tennis**: [`tennis/documentation/tennis_paper.pdf`](tennis/documentation/tennis_paper.pdf)
   — does the model beat the market? (Spoiler: it matches it.)
 
+## Citation
+
+The paper is archived on Zenodo with a DOI:
+[10.5281/zenodo.20402346](https://zenodo.org/records/20402346). Please cite it if
+you use this work.
+
 ## License
 
-Released under the MIT License — see [`LICENSE`](LICENSE).
+Released under the **Creative Commons Attribution 4.0 (CC BY 4.0)** — see
+[`LICENSE`](LICENSE). You can share, adapt and reuse it for any purpose, even
+commercially, as long as you give credit.
