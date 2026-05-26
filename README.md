@@ -110,8 +110,8 @@ The same pipeline applied to both sports:
 
 - **F1**: [`f1/documentation/f1_paper.pdf`](f1/documentation/f1_paper.pdf) — race
   podium + season champion, ablation, what would break the model.
-- **Tennis**: [`docs/paper_tennis.tex`](docs/paper_tennis.tex) — does the model
-  beat the market? (Spoiler: it matches it.)
+- **Tennis**: [`tennis/documentation/tennis_paper.pdf`](tennis/documentation/tennis_paper.pdf)
+  — does the model beat the market? (Spoiler: it matches it.)
 
 ## License
 
