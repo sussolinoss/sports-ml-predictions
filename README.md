@@ -115,4 +115,4 @@ The same pipeline applied to both sports:
 
 ## License
 
-MIT.
+Released under the MIT License — see [`LICENSE`](LICENSE).
