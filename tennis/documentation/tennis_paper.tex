@@ -164,6 +164,28 @@ XGBoost output and the ELO baseline, using out-of-fold predictions and a
 meta logistic regression. The gain on the test set was below half a
 point, so I kept the calibrated XGBoost as the main model.
 
+\subsection{Pipeline}
+The whole pipeline, from raw matches to a calibrated probability, is the
+following:
+\begin{verbatim}
+load ATP matches (Sackmann, 2005-2026)
+drop walkovers and early retirements
+randomise which player is "p1" (seeded)
+sort matches by date
+for each match, in time order:
+    read state  -> ELO, surface ELO, form,
+                   serve stats, ranking, h2h
+    write feature row (+ closing-odds prob)
+    update state with the real result   # only now
+split by date: train / val / test
+train XGBoost on train, early stop on val
+fit isotonic calibrator on val
+evaluate accuracy, Brier, log-loss on test
+\end{verbatim}
+The order inside the loop is the important part: the features of a match are
+written \emph{before} its result is used to update the ratings and rolling
+statistics. This is the state-before-match rule from Section~3.4.
+
 \subsection{Data Collection}
 The main data source is the \texttt{tennis\_atp} repository of Jeff
 Sackmann [1], free on GitHub. It contains all ATP matches from the early
@@ -323,11 +345,42 @@ Log-loss   & 0.630 & \textbf{0.599} \\
 
 Compared with the \(\sim 63\%\) accuracy of the amateur baseline [7], my
 model gains around \textbf{4 percentage points}, which in this setting
-is a clear jump. Most of the gain comes from two things: the surface
-specific ELO, and the closing-odds probability used as a feature. The
-closing-odds feature alone gives around \(+2\) points and shows up as
-the fourth most important feature, just after the ELO difference, the
-log-ranking difference, and the surface ELO difference.
+is a clear jump. To put a number on the uncertainty, I bootstrapped the
+test set (resampling matches with replacement, 2000 times): the 95\%
+confidence interval on accuracy is \textbf{[0.665, 0.693]}. The interval
+is tight because the test set is large (more than \num{4000} matches),
+unlike a single-season sport, so the improvement over the baseline is not
+just noise.
+
+\subsection{Ablation}
+To see how much each kind of information actually contributes, I removed one
+feature group at a time, retrained the model and re-measured the test
+accuracy (Table~\ref{tab:ablation}). The result is clear and, for me, the most
+honest part of the project: the \textbf{closing odds} are by far the most
+important feature. Removing them costs about \textbf{3.8 points}, while removing
+any other group (ELO, ranking, recent form, head-to-head, serve statistics)
+costs less than one point each. In other words, almost all of the signal my
+model uses is already contained in the bookmaker's probability, and the rest of
+the features add only a little on top.
+
+\begin{table}[t]
+\centering
+\caption{Ablation: test accuracy when one feature group is removed
+(full model 0.678).}
+\label{tab:ablation}
+\begin{tabular}{lcc}
+\toprule
+Removed group & Accuracy & $\Delta$ \\
+\midrule
+Bookmaker odds   & 0.641 & $-3.75$ \\
+Head-to-head     & 0.670 & $-0.88$ \\
+Recent form      & 0.672 & $-0.62$ \\
+Ranking          & 0.673 & $-0.57$ \\
+ELO              & 0.674 & $-0.45$ \\
+Serve statistics & 0.675 & $-0.33$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Confusion Matrix}
 Table~\ref{tab:cm} shows how the model classified the test matches.
@@ -395,13 +448,14 @@ the probabilities implied by the closing odds already contain almost
 the same information that my features pull out from the public data.
 
 \subsection{What the model learnt}
-Looking at the feature importance of the trained model, the strongest
-features are the ELO difference, the log-ranking difference, the
-surface ELO difference and the BookMaker-implied probability. Recent
-form, head-to-head and serve statistics also help, but with much
-smaller weight. In tennis, most of the signal is captured by a small
-number of strong, well-known features, and adding many small features
-only helps a little.
+The ablation in Section~4.3 answers this directly. The single most useful
+input is the BookMaker-implied probability: removing it costs about 3.8 points,
+far more than any other group. The ELO ratings, ranking, recent form,
+head-to-head and serve statistics each contribute less than a point on their
+own, because they are partly redundant with each other and, above all, with the
+closing odds, which already summarise most of them. In tennis, most of the
+signal is captured by a small number of strong, well-known features, and the
+strongest single one is the market's own estimate.
 
 % ---------------------------------------------------------------
 \section{Discussion}
