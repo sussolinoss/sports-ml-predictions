@@ -164,28 +164,6 @@ XGBoost output and the ELO baseline, using out-of-fold predictions and a
 meta logistic regression. The gain on the test set was below half a
 point, so I kept the calibrated XGBoost as the main model.
 
-\subsection{Pipeline}
-The whole pipeline, from raw matches to a calibrated probability, is the
-following:
-\begin{verbatim}
-load ATP matches (Sackmann, 2005-2026)
-drop walkovers and early retirements
-randomise which player is "p1" (seeded)
-sort matches by date
-for each match, in time order:
-    read state  -> ELO, surface ELO, form,
-                   serve stats, ranking, h2h
-    write feature row (+ closing-odds prob)
-    update state with the real result   # only now
-split by date: train / val / test
-train XGBoost on train, early stop on val
-fit isotonic calibrator on val
-evaluate accuracy, Brier, log-loss on test
-\end{verbatim}
-The order inside the loop is the important part: the features of a match are
-written \emph{before} its result is used to update the ratings and rolling
-statistics. This is the state-before-match rule from Section~3.4.
-
 \subsection{Data Collection}
 The main data source is the \texttt{tennis\_atp} repository of Jeff
 Sackmann [1], free on GitHub. It contains all ATP matches from the early
@@ -368,9 +346,10 @@ the features add only a little on top.
 \caption{Ablation: test accuracy when one feature group is removed
 (full model 0.678).}
 \label{tab:ablation}
-\begin{tabular}{lcc}
+\small
+\begin{tabular}{@{}lcc@{}}
 \toprule
-Removed group & Accuracy & $\Delta$ \\
+Removed group & Accuracy & $\Delta$ (pt) \\
 \midrule
 Bookmaker odds   & 0.641 & $-3.75$ \\
 Head-to-head     & 0.670 & $-0.88$ \\
@@ -535,6 +514,14 @@ avoid data leakage, how to split data in time, how to compare models
 in a fair way, and how to read calibration tables. The model itself
 is a small piece of code; the method around it is the part I will
 keep using in the next projects.
+
+% ---------------------------------------------------------------
+\section{Code and data}
+The full code, the feature pipeline and the trained model are public on GitHub at
+\texttt{github.com/sussolinoss/sports-ml-predictions} (the trained weights are in
+the tagged release). The data is the public \texttt{tennis\_atp} dataset [1] and
+the historical closing odds from tennis-data.co.uk [2], so every number in this
+paper can be reproduced from the same code and sources.
 
 % ---------------------------------------------------------------
 \section{References}
