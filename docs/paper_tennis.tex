@@ -1,0 +1,295 @@
+\documentclass[10pt,twocolumn]{article}
+
+% ---- packages (standard TeX Live, compila con pdflatex) ----
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}            % font serif tipo Times (look accademico)
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+% ---- titoli di sezione in maiuscoletto, centrati (stile esempio) ----
+\titleformat{\section}[block]{\centering\scshape\large}{\thesection.}{0.5em}{}
+\titleformat{\subsection}[block]{\bfseries}{\thesubsection}{0.5em}{}
+\setlength{\columnsep}{0.8cm}
+
+% ---- header corrente ----
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\small\itshape Tennis match prediction with machine learning}
+\renewcommand{\headrulewidth}{0pt}
+
+\title{\bfseries Can a Machine Learning Model Beat the Tennis Betting Market?\\
+\large An Empirical Study with Public Data}
+\author{%
+  Author Name\\ Liceo Scientifico, Italy
+}
+\date{}
+
+\begin{document}
+\twocolumn[%
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{center}\textbf{Abstract}\end{center}
+    \noindent
+    This work investigates whether a machine learning model, trained only on
+    free public data, can systematically profit from betting on ATP tennis
+    matches. We build a complete pipeline---dynamic ELO ratings, leakage-free
+    feature engineering, calibrated gradient boosting, and closing odds used as a
+    feature---and evaluate it with rigorous statistical methods (walk-forward
+    validation and bootstrap confidence intervals). The model reaches
+    \textbf{67.6\% accuracy} and is well calibrated, yet its return on investment
+    over more than \textbf{8{,}000 out-of-sample bets} is approximately
+    \textbf{$-1\%$}, statistically indistinguishable from the bookmaker's margin.
+    We conclude that the ATP tennis market, priced on sharp closing odds, is
+    \emph{efficient} with respect to the information contained in public data:
+    a negative but informative result, consistent with the efficient-market
+    hypothesis. We emphasise the crucial distinction between predictive
+    \emph{accuracy} and economic \emph{edge}, two notions that are frequently
+    conflated.
+    \vspace{0.6em}
+  \end{@twocolumnfalse}
+]
+
+% ---------------------------------------------------------------
+\begin{center}\scshape\large Indices\end{center}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item[0.] \textbf{Abstract:} concise summary of the problem, method and findings.
+  \item[1.] \textbf{Introduction:} why ``predicting'' and ``beating the market'' differ.
+  \item[2.] \textbf{Related work:} ELO, efficient markets, prior tennis models.
+  \item[3.] \textbf{Methodology:} data, ratings, leakage-free features, model,
+            calibration, and how the edge is evaluated.
+  \item[4.] \textbf{Results:} accuracy, calibration, ROI, statistical significance.
+  \item[5.] \textbf{Discussion:} market efficiency, the hit-rate trap, limitations.
+  \item[6.] \textbf{Conclusion:} implications of the negative result.
+  \item[7.] \textbf{References.}
+\end{enumerate}
+
+% ---------------------------------------------------------------
+\section{Introduction}
+Sports betting markets are a natural laboratory for the efficient-market
+hypothesis: every match has a price (the odds) that, if the market is efficient,
+already incorporates all publicly available information. A predictive model is
+therefore useful for betting only if it knows something the price does not.
+
+This raises a question often misunderstood by hobbyists: is a model that
+\emph{predicts winners accurately} the same as a model that \emph{beats the
+market}? We argue, and demonstrate empirically, that the two are different. A
+model can be highly accurate yet unprofitable, because the bookmaker prices the
+odds around the same probabilities the model estimates, and keeps a margin.
+
+We study men's professional tennis (ATP), where the data of Jeff Sackmann are
+freely available and clean, and where closing odds (the last prices before a
+match) are published for the main tour. Our hypotheses are:
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+  \item $H_0$ (efficient market): expected ROI $\le 0$.
+  \item $H_1$: there exists a subset of matches with ROI $> 0$.
+\end{itemize}
+
+% ---------------------------------------------------------------
+\section{Related Work}
+The ELO rating system, originally designed for chess, has been widely applied to
+tennis (e.g.\ FiveThirtyEight, Tennis Abstract), often specialised by surface.
+The efficient-market hypothesis of Fama predicts that liquid betting markets, and
+especially sharp bookmakers such as Pinnacle, leave little exploitable signal.
+Prior machine-learning studies on tennis report accuracies around 65--70\%,
+in line with the bookmakers' own implied accuracy, suggesting a hard ceiling
+imposed by the intrinsic randomness of a single match (court conditions,
+momentum, minor injuries).
+
+% ---------------------------------------------------------------
+\section{Methodology}
+
+\subsection{Strategy}
+We model the binary outcome ``does player~1 win?'' and convert the model
+probability into a betting decision via the \emph{value} criterion (Sec.~3.7).
+We deliberately use bookmaker odds in two distinct roles: (i) the closing
+implied probability as an input \emph{feature}, and (ii) the market against which
+we measure profit. Both are pre-match quantities, so neither introduces leakage.
+
+\subsection{Data}
+Match results come from the public Sackmann \texttt{tennis\_atp} repository:
+about \num{63000} matches from 2005 to 2026, with per-match serve statistics,
+rankings, surface and round. Closing odds come from \textit{tennis-data.co.uk}
+(Pinnacle and Bet365), about \num{33000} matches from 2013 onward, ATP main tour
+only. All data are ordered strictly by date.
+
+\subsection{Dynamic ELO}
+Each player has a general and a surface-specific rating. The expected win
+probability of player $A$ against $B$ is
+\begin{equation}
+  E_A = \frac{1}{1 + 10^{\,(R_B - R_A)/400}},
+\end{equation}
+and ratings update after each match by
+\begin{equation}
+  R_A' = R_A + K\,(S_A - E_A),
+\end{equation}
+where $S_A\in\{0,1\}$ is the outcome and $K$ decreases with the number of matches
+played (young players move faster than veterans).
+
+\subsection{Leakage-free feature engineering}
+\textbf{Golden rule:} for every match, features are computed from the state of
+the world \emph{before} the match; the state is updated only \emph{after}.
+Reversing this order leaks the outcome and produces fake accuracy. Features
+include: ELO and surface-ELO differences, recent form (last 10 matches),
+head-to-head, fatigue (minutes in the last 14 days), rolling serve statistics
+(first-serve in \%, points won on serve, ace and double-fault rates,
+break points saved), rankings and ranking points. The assignment of winner to
+``player~1'' or ``player~2'' is randomised deterministically, so that the model
+cannot learn the trivial rule ``player~1 always wins''.
+
+\subsection{Model and calibration}
+We train a gradient-boosted tree ensemble (XGBoost) with a strictly
+\emph{temporal} split: training on the oldest seasons, validation on the next,
+and test on the most recent (held-out). Raw boosting probabilities are
+over-confident, so we apply \emph{isotonic regression} calibration fitted on the
+validation set. Calibration does not change accuracy but makes the estimated edge
+trustworthy. Quality of probabilities is measured by log-loss and the Brier
+score,
+\begin{equation}
+  \mathrm{Brier} = \frac{1}{N}\sum_{i=1}^{N}\big(p_i - y_i\big)^2 .
+\end{equation}
+
+\subsection{Closing odds as a feature}
+We add the overround-removed implied probability of the closing price as a model
+feature. Given decimal odds $o_1,o_2$, the implied probability of player~1 is
+\begin{equation}
+  \hat{p}_1 = \frac{1/o_1}{1/o_1 + 1/o_2}.
+\end{equation}
+It is assigned to player~1 according to the deterministic swap, never according
+to the result, so no leakage is introduced.
+
+\subsection{Evaluating the edge}
+For a bet at decimal odds $o$ on an outcome the model gives probability $p$, we
+define the \emph{edge}
+\begin{equation}
+  \text{edge} = p - \frac{1}{o},
+\end{equation}
+and we bet only when $\text{edge} > \tau$ for a threshold $\tau$. The break-even
+hit-rate at odds $o$ is exactly $1/o$. Stakes follow fractional Kelly,
+\begin{equation}
+  f^\star = \frac{p\,o - 1}{o - 1},
+\end{equation}
+capped for safety. To avoid fooling ourselves we use \textbf{walk-forward
+validation}: the model is retrained on each past window and tested on the next,
+never-seen window, with a \emph{fixed} filter applied throughout. Finally, a
+\textbf{bootstrap} (\num{10000} resamples) gives a 95\% confidence interval (CI)
+for the ROI,
+\begin{equation}
+  \text{ROI} = \frac{\sum_i \text{profit}_i}{\sum_i \text{stake}_i}.
+\end{equation}
+
+% ---------------------------------------------------------------
+\section{Results}
+
+\subsection{Accuracy and calibration}
+Adding richer features and the closing-odds feature steadily improves the model
+over a pure ELO baseline (Table~\ref{tab:acc}). The closing-odds feature alone
+contributes roughly $+2$ accuracy points. The model is well calibrated: when it
+says ``90\%'', the player wins about 91\% of the time.
+
+\begin{table}[t]
+\centering
+\caption{Test-set performance (held-out seasons).}
+\label{tab:acc}
+\begin{tabular}{lccc}
+\toprule
+Model & Accuracy & LogLoss & Brier \\
+\midrule
+ELO baseline              & 63.4\% & 0.630 & 0.221 \\
+XGBoost (ELO + serve)     & 65.0\% & 0.617 & 0.215 \\
+\;+ closing odds (calib.) & \textbf{67.6\%} & 0.599 & 0.207 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Economic edge}
+Despite the good accuracy, no betting strategy is profitable. Table~\ref{tab:roi}
+reports the ROI and its 95\% bootstrap CI for several strategies evaluated
+out-of-sample.
+
+\begin{table}[t]
+\centering
+\caption{Out-of-sample betting results (Pinnacle closing odds).}
+\label{tab:roi}
+\begin{tabular}{lccc}
+\toprule
+Strategy & Bets & ROI & 95\% CI \\
+\midrule
+edge $\ge 0.04$ (WF)        & 8262 & $-1.1\%$ & $[-2.8,+0.7]$ \\
+``safe'' ($p\ge0.80$)       & 768  & $-4.1\%$ & $[-7.6,-0.6]$ \\
+rank band 31--50            & 1416 & $-1.9\%$ & $[-6.3,+2.6]$ \\
+Slam+Masters, Hard/Grass    & 2572 & $+1.0\%$ & $[-1.9,+4.0]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent No strategy has a 95\% CI entirely above zero. The ``safe'' bets
+(high-confidence picks) are in fact a \emph{proven loss}: the hit-rate is 82\%
+but the average odds are only 1.21, whose break-even hit-rate is
+$1/1.21 = 82.6\%$. The high hit-rate is eaten by the bookmaker's margin. This is
+the central lesson:
+\begin{equation}
+  \text{edge} = \underbrace{p}_{\text{hit-rate}} - \frac{1}{o},
+\end{equation}
+so filtering by hit-rate alone, while ignoring the odds, selects short-priced
+favourites and loses.
+
+\subsection{The garden of forking paths}
+The ``ranking 31--50'' segment looked promising at $+1.8\%$ over 95 bets in a
+single backtest. Re-evaluated honestly over \num{1416} out-of-sample bets it
+regressed to $-1.9\%$. This is a textbook example of a spurious pattern that
+appears on small samples and vanishes on the full picture, and it justifies the
+use of walk-forward validation with a pre-committed filter.
+
+% ---------------------------------------------------------------
+\section{Discussion}
+
+\subsection{Market efficiency}
+The result is consistent with an efficient market: Pinnacle's closing line
+(2--3\% margin) already incorporates the information available in public data.
+The model matches the market's accuracy but cannot exceed it; the residual
+$-1\%$ ROI is essentially the margin.
+
+\subsection{Limitations}
+We use only free, pre-match data: no live (in-play) odds, and no private
+information such as last-minute injuries or conditions. Historical odds exist
+only for the ATP main tour, not for Challenger events where markets may be less
+efficient. In production one bets hours before the match, not on the (sharper)
+closing line, so the realistic edge would be even lower.
+
+% ---------------------------------------------------------------
+\section{Conclusion}
+Using only free public data it is possible to build an accurate, well-calibrated
+tennis predictor (67.6\%), but \emph{not} a profitable pre-match betting system
+on the ATP market: the ROI is statistically indistinguishable from the
+bookmaker's margin. The market is efficient with respect to this information.
+The negative result is scientifically informative: it quantifies \emph{where
+there is no value}, it makes explicit the difference between prediction and
+profit, and it illustrates the methodological pitfalls (data leakage,
+cherry-picking) of na\"ive data mining. Promising directions for future work are
+less efficient markets (in-play, WTA, games totals and handicaps), the
+integration of non-public data, and point-by-point Markov modelling.
+
+% ---------------------------------------------------------------
+\section{References}
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+  \item J.~Sackmann, \textit{Tennis match datasets}, GitHub repository
+        \texttt{tennis\_atp}.
+  \item \textit{tennis-data.co.uk} --- historical closing odds.
+  \item E.~Fama, ``Efficient Capital Markets: A Review of Theory and Empirical
+        Work,'' \textit{Journal of Finance}, 1970.
+  \item A.~Elo, \textit{The Rating of Chessplayers, Past and Present}, 1978.
+  \item T.~Chen, C.~Guestrin, ``XGBoost: A Scalable Tree Boosting System,''
+        \textit{KDD}, 2016.
+  \item J.~L.~Kelly, ``A New Interpretation of Information Rate,''
+        \textit{Bell System Technical Journal}, 1956.
+  \item B.~Efron, ``Bootstrap Methods,'' \textit{Annals of Statistics}, 1979.
+  \item A.~Gelman, E.~Loken, ``The Garden of Forking Paths,'' 2013.
+\end{enumerate}
+
+\end{document}

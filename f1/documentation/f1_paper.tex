@@ -1,0 +1,508 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+\titleformat{\section}[block]{\centering\scshape\large}{\thesection.}{0.5em}{}
+\titleformat{\subsection}[block]{\bfseries}{\thesubsection}{0.5em}{}
+\setlength{\columnsep}{0.8cm}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\small\itshape Formula 1 race and championship prediction with machine learning}
+\renewcommand{\headrulewidth}{0pt}
+
+\title{\bfseries Formula 1 race and championship prediction with machine learning}
+\author{%
+  Simone Bonasorta\\ Liceo Scientifico Nicola Pizi, Palmi
+}
+\date{}
+
+\begin{document}
+\twocolumn[%
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{center}\textbf{Abstract}\end{center}
+    \noindent
+    I made this project after the tennis one, to keep growing my knowledge of
+    machine learning and to see if the same way of working would hold on a
+    different sport. The idea is that the model works on thousands of race
+    results collected from 1950 to 2026, the full history of the Formula~1
+    World Championship. This time I built \emph{two} models, not one: a
+    \textbf{pre-race} model that estimates, before the start, the probability
+    that a driver finishes on the podium, and a \textbf{full-season} model that
+    estimates, at any point of the year, the probability that a driver wins the
+    Drivers' Championship. Both use only data that was known before the event.
+    The strong part is again the features I extract and use. In this paper I show
+    how I built the two models, how the pre-race one does against the qualifying
+    grid, and how the probabilities relate to the ones used by the BookMaker, the
+    AI that runs on betting sites. The pre-race model is above the qualifying
+    grid, by a small margin on one season and by more when the seed is picked on
+    the validation year. The season model needs careful calibration before its
+    numbers mean anything. I keep both honest: the code and the trained models
+    are public, so every number here can be reproduced.
+    \vspace{0.6em}
+  \end{@twocolumnfalse}
+]
+
+% ---------------------------------------------------------------
+\begin{center}\scshape\large Indices\end{center}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item[0.] \textbf{Abstract:} A short summary of the project and the two
+            models I built.
+  \item[1.] \textbf{Introduction:} Why I moved to Formula~1 after tennis, and
+            how I started the project.
+  \item[2.] \textbf{Related work:} The baseline I compare against and the role
+            of the BookMaker.
+  \item[3.] \textbf{Methodology:} The two models, architecture, dataset,
+            preprocessing and features.
+  \item[4.] \textbf{Results:} Accuracy, calibration and comparison with the
+            grid baseline.
+  \item[5.] \textbf{Discussion:} What works, the blocks I hit, and why some
+            ideas did not help.
+  \item[6.] \textbf{Conclusion:} Final remarks and what I take from the
+            project.
+  \item[7.] \textbf{References.}
+\end{enumerate}
+
+% ---------------------------------------------------------------
+\section{Introduction}
+I made this project after the tennis one, for the same amateur reasons and for
+fun. The tennis model was my first real attempt at \emph{win} prediction: I
+started, like most public tutorials, from a Random Forest, and I got a clear
+improvement over the amateur baseline before hitting a plateau. For a first try
+that was fair, and the plateau itself taught me something, because it was not
+the data running out but my techniques.
+
+So with Formula~1 I wanted to bring the knowledge I had gained and push past
+that plateau on purpose. What carried the improvement, in the end, was not a
+heavier model but three things on top of gradient boosted trees: richer
+features built by hand, a time-decay weighting that makes recent seasons count
+more, and a calibration step that turns the raw scores into honest
+probabilities. I did try a heavier idea too, a temporal convolutional network
+on a driver's recent races, but it did not make the final model; I keep that
+story for the discussion, because the reason it failed is itself useful.
+
+The way I started was practical. I am not a motorsport analyst, so first I used
+an AI research assistant (Claude) to map out which public datasets exist for
+Formula~1, how deep they go and what they contain. Once I had the sources, the
+rest was on me. I loaded the data, looked at what was actually inside, and built
+the features one by one by reasoning about what should matter for a race,
+instead of throwing everything at the model and hoping.
+
+My starting question was the same as in tennis: how high can I push the
+accuracy using only free public data, and where is the real limit. But Formula~1
+gave me a second question that tennis did not have. A season is a long story,
+not a single match, so I also wanted to predict \emph{who wins the title},
+updating the guess race after race.
+
+As in the tennis paper, I want to be clear from the start. The output of both
+models is a \emph{probability}, not a bet. I never placed real bets with it.
+The right thing to compare these probabilities against is the grid for the
+race, and the BookMaker for the title.
+
+% ---------------------------------------------------------------
+\section{Related Work}
+
+\subsection{The baseline}
+The reference I compare the pre-race model against is the \textbf{qualifying
+grid}: the simple rule that the three drivers starting first are the three that
+will finish on the podium. In Formula~1 this is a strong baseline, because track
+position is hard to recover and pole-sitters win a lot. Any honest improvement
+has to show as a clear gain over this rule, on races the model has not seen
+during training.
+
+My model does not classify a driver into fixed classes like ``winner / points /
+no points''. It \emph{ranks} the drivers by their probability of finishing on
+the podium, and is judged on how many of its top three guesses are correct. This
+is the number that matters for the goal I set, so it is the one I report.
+
+\subsection{The BookMaker}
+The BookMaker is the same system I described in the tennis paper: the AI that
+runs on betting sites and sets, for each outcome, a price that turns into a
+probability once the margin is removed. For Formula~1 the natural market to
+compare against is the outright market, where you bet, weeks in advance, on who
+wins the championship. Given a decimal odd \(o\) for one driver, the implied
+probability, before normalisation, is \(1/o\). Dividing each by the sum over all
+drivers removes most of the margin and gives a probability that sums to one.
+
+Unlike tennis, I could not find a free historical archive of Formula~1 odds. So
+for this sport the BookMaker comparison is done live, on the 2026 season, by
+writing down the championship odds of an Italian bookmaker (Sisal) and comparing
+them with the season model week by week.
+
+% ---------------------------------------------------------------
+\section{Methodology}
+
+\subsection{Two models, one method}
+I built two separate models that share the same pipeline but answer two
+different questions.
+
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item The \textbf{pre-race model} predicts, before a Grand Prix, the
+        probability that a driver finishes in the top three. It is evaluated
+        with \emph{precision@3}: among the three drivers with the highest
+        predicted probability, how many actually reach the podium, averaged
+        over the races.
+  \item The \textbf{full-season model} predicts, after round~\(N\) of a season,
+        the probability that a driver ends the year as champion. It is
+        evaluated on how often its top pick is the real champion, and on how
+        well its probabilities are calibrated.
+\end{itemize}
+
+Both work only on \textbf{pre-event} data: for the race, what is known before
+the lights go out (grid, qualifying gap, recent form, car and driver history);
+for the title, what is known after the last race already run (points, gap to the
+leader, races left). I did not use any in-race telemetry or live timing.
+
+\subsection{Architecture}
+Both models share the same core: a gradient boosted tree ensemble, this time
+\textbf{CatBoost} [2], with ordered boosting that behaves well on a dataset that
+is not huge. They differ in how the raw scores are turned into probabilities.
+The pre-race model puts an \textbf{isotonic regression} calibrator [4] on top,
+fitted on the validation season, so the podium probabilities can be trusted and
+compared to the grid. The season model uses a different step, described at the
+end of this subsection.
+
+Two design choices for the pre-race model came out of experiments, not from
+theory:
+
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item \textbf{Time-decay sample weights.} Formula~1 changes a lot from one
+        season to the next: rules, cars, tyres. I weight each training race by
+        \(\exp(-\text{age}/\tau)\) with \(\tau\) of about 1.5 seasons, so recent
+        races count more. This was the single change that gave the biggest jump
+        in the pre-race model.
+  \item \textbf{Seed selection on validation.} The podium metric is a ranking
+        over a small number of races, so it is noisy from one random seed to the
+        next. I train several seeds and keep the one that is best on the
+        \emph{validation} season, never on the test, so the choice is honest.
+\end{itemize}
+
+The season model does not use isotonic. Since only one driver can win the title,
+a probability per driver is not enough: the numbers have to sum to one over the
+drivers of that season. So I take the raw CatBoost scores and pass them through
+a \textbf{softmax} [5] over the drivers of each race state, with a
+\textbf{temperature} fitted on past seasons. Without this, the model was wildly
+overconfident: it gave the leader a \(100\%\) chance after five races. With it
+the same leader drops to a believable number.
+
+\subsection{Data Collection}
+The data comes from the Ergast / Jolpica Formula~1 database [1], free and
+covering every race from 1950 to today. After downloading all the seasons I had
+around \num{26000} driver-race results. From these I built two datasets:
+
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item the \textbf{race dataset}, one row per driver per Grand Prix, used for
+        the podium model;
+  \item the \textbf{season dataset}, one row per driver per ``state of the
+        championship after round \(N\)'', about \num{22000} rows, used for the
+        title model.
+\end{itemize}
+
+The split is strictly in time, exactly as in tennis: old seasons for training,
+one recent season for validation, and the most recent complete season (2025) as
+the held-out test, with the part of 2026 already run kept aside for live
+prediction. A random split would leak the future of a driver into the past, and
+the accuracy would look good for the wrong reason.
+
+\subsection{Data Preprocessing}
+The key preprocessing step is the same one that mattered most in tennis: the
+\textbf{state-before-event rule}. For every race the features are computed from
+the state of the world \emph{before} the race, and the rolling statistics
+(form, podium rate, reliability, championship points) are updated only after the
+result is read. The code literally reads the state, writes the feature row, and
+only then updates the counters. If you do these in the wrong order, the result
+leaks into the features and the accuracy becomes fake.
+
+For the season model I also had to fix a subtle bug: for the year still being
+run (2026), the number of rounds is not the final one, so ``races left'' was
+computed as zero. I set the expected calendar length for the current season so
+that the remaining races are counted correctly.
+
+\subsection{Features Used}
+The race feature vector is made of a few groups, all reasoned out from how a
+Grand Prix actually works.
+
+\paragraph{Grid and qualifying.} The starting position is the strongest single
+feature, because in Formula~1 track position is hard to recover. I also use the
+qualifying gap to pole and the gap to the team mate, which separate a driver who
+is genuinely fast from one who is just in a fast car.
+
+\paragraph{Driver and car form.} Rolling averages over the last races of finish
+position, points, podium rate and retirement rate, kept separately for the
+driver and for the constructor. The car is half of the result in this sport, so
+the constructor features carry real weight.
+
+\paragraph{Track-specific history.} The average past result of the driver and of
+the constructor at this circuit, and a split between street circuits and
+permanent ones, because some cars and some drivers are clearly better on one
+type than the other.
+
+\paragraph{Lag and recovery.} The results of the last one, two and three races
+as explicit features, and a ``recovery'' number, the average of grid minus
+finishing position, that captures how much a driver tends to gain during a race.
+
+For the season model the features are different in nature: current championship
+points and position, gap to the leader (absolute and as a fraction), points per
+race, podium count so far, momentum over the last three races, and a head-to-head
+measure against the current leader.
+
+\subsection{Code and data}
+The data is the public Ergast / Jolpica database [1]. The race dataset has about
+\num{26000} driver-race rows, the season dataset about \num{22000}. The feature
+code, the time-decay weighting, the isotonic calibrator [4] and the
+softmax-plus-temperature step [5] are in Python (CatBoost, scikit-learn). The
+full pipeline, the per-race predictions of the 2025 test season, and the
+trained models are published on GitHub
+(\texttt{github.com/sussolinoss/sports-ml-predictions}, see the tagged release), so every
+number in this paper can be reproduced from the same code and weights.
+
+% ---------------------------------------------------------------
+\section{Results}
+
+\subsection{Evaluation metrics}
+The pre-race model is judged with \textbf{precision@3}. For each race I take the
+three drivers with the highest predicted probability and count how many of them
+finish on the podium, then average over the races:
+\begin{equation}
+  \text{precision@3} = \frac{1}{R}\sum_{r=1}^{R}
+       \frac{\#\{\text{top-3 picks on the podium in race } r\}}{3}.
+\end{equation}
+For the quality of the probabilities, in both models, I report the Brier score
+[3], the mean squared error between the predicted probability and the result:
+\begin{equation}
+  \text{Brier} = \frac{1}{N}\sum_{i=1}^{N} (p_i - y_i)^2 ,
+\end{equation}
+and, for the season model, the expected calibration error (ECE), the average gap
+between predicted confidence and observed frequency over probability bins. For
+Brier and ECE, lower is better.
+
+\subsection{Pre-race model}
+On the held-out 2025 season (24 races) the calibrated CatBoost model reaches a
+\textbf{precision@3 of 0.778}, against \textbf{0.750} for the qualifying grid
+(the three drivers starting first). I also compare it to two simpler rules on
+the same features: a logistic regression and a trivial rule that picks the three
+drivers with the best podium rate over their last ten races, both at
+\textbf{0.639}. The model is above the grid, and clearly above the linear and
+the naive rule, which says the gain comes from non-linear structure in the
+features and not from overfitting a strong baseline.
+
+\begin{table}[t]
+\centering
+\caption{Pre-race model, test season 2025 (precision@3).}
+\label{tab:race}
+\begin{tabular}{lc}
+\toprule
+Rule & precision@3 \\
+\midrule
+Recent podium-rate (last 10) & 0.639 \\
+Logistic regression (same features) & 0.639 \\
+Qualifying grid              & 0.750 \\
+My model, reproducible run (AUC 0.94, Brier 0.061) & \textbf{0.778} \\
+My model, best seed on validation & 0.833 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The size of the test calls for caution. A season is only 24 races, so
+precision@3 is noisy: the standard error is in the order of several points, and
+the gap of about 3 points over the grid on the reproducible run is well within
+what one season can prove. I read it as a real but small improvement that needs
+more seasons to confirm. Picking the seed on the validation year pushes the test
+number up to 0.833, but that is a best-of selection, not the typical run; the
+plain reproducible model is the honest headline. The era also matters: with one
+or two dominant cars the podium is more predictable, so the ceiling is higher
+than in a season where everyone wins.
+
+As a real held-out check, Table~\ref{tab:2026} puts the model's podium call next
+to the actual podium for the first five races of the 2026 season. The model was
+trained only on data up to 2025, so these are genuinely unseen races, and the
+real podiums come from the results database, not from a simulation. The model
+gets 9 of the 15 podium slots right, a precision@3 of 0.600. Lower than on the
+2025 test, as expected on a small and more open sample.
+
+\begin{table}[t]
+\centering
+\caption{Predicted vs.\ real podium, first five races of 2026 (held-out, model
+trained up to 2025).}
+\label{tab:2026}
+\small
+\begin{tabular}{llc}
+\toprule
+Race (predicted / real) & & Hits \\
+\midrule
+Australia & pred: russell, antonelli, verstappen & \\
+          & real: russell, antonelli, leclerc    & 2/3 \\
+China     & pred: antonelli, russell, hamilton   & \\
+          & real: antonelli, russell, hamilton   & 3/3 \\
+Japan     & pred: antonelli, russell, piastri    & \\
+          & real: antonelli, piastri, leclerc    & 2/3 \\
+Miami     & pred: antonelli, verstappen, leclerc & \\
+          & real: antonelli, norris, piastri     & 1/3 \\
+Canada    & pred: antonelli, russell, piastri    & \\
+          & real: antonelli, hamilton, verstappen& 1/3 \\
+\midrule
+\multicolumn{2}{l}{\textbf{precision@3}} & \textbf{0.600} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+One thing I like about this table: the model never misses the podium completely.
+It calls all three right once (China), two of three twice (Australia, Japan),
+and at least one in every single race. On a sport as chaotic as Formula~1, with
+crashes and safety cars, never going fully blind on a podium is a good sign.
+
+\subsection{Full-season model}
+The season model is where calibration mattered most. Before the softmax and
+temperature step, the model gave the early leader a \(100\%\) title chance after
+five races, which is obviously wrong. After calibration, on the 2025 test season
+the probabilities are well behaved and the top pick is the real champion in about
+23\% of the race states across the year. That number looks low until you remember
+that early in a season the title is genuinely open, so a good model \emph{should}
+be unsure. Table~\ref{tab:cal} gives the calibration numbers with and without the
+temperature step.
+
+\begin{table}[t]
+\centering
+\caption{Season model calibration on the 2025 test (lower is better).}
+\label{tab:cal}
+\begin{tabular}{lcc}
+\toprule
+Variant & Brier & ECE \\
+\midrule
+Softmax, no temperature  & 0.0502 & 0.0514 \\
+Softmax + temperature (T = 1.77) & \textbf{0.0399} & \textbf{0.0338} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:champ} shows the model's \emph{forecast} for the 2026 championship
+podium after round five: who it expects to finish in the top three of the final
+standings. The season is not over, so this is a prediction, not a result.
+Antonelli, the leader at that point, is a near lock for a podium, with Russell
+and Hamilton close behind and Leclerc as the realistic outsider. The column
+$P(\text{top-3})$ is the probability of that driver finishing top three in the
+standings, and $P_{\text{norm}}$ is the same numbers scaled to sum to one across
+drivers.
+
+\begin{table}[t]
+\centering
+\caption{Forecast: 2026 championship podium after round five (season not yet
+decided).}
+\label{tab:champ}
+\begin{tabular}{lcccc}
+\toprule
+Driver & Pos & Pts & $P(\text{top-3})$ & $P_{\text{norm}}$ \\
+\midrule
+Antonelli & 1 & 118 & 100.0\% & 30.9\% \\
+Hamilton  & 3 & 61  & 81.8\%  & 25.3\% \\
+Russell   & 2 & 67  & 81.8\%  & 25.3\% \\
+Leclerc   & 4 & 58  & 60.0\%  & 18.5\% \\
+rest      & --& --  & \(<\)0.5\% & \(<\)0.1\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For the title itself (not just the podium), the same calibration gives Antonelli
+about a \textbf{79\%} chance after round five, against the \(100\%\) the raw
+model wanted to give. On the same date the Italian bookmaker Sisal priced him
+around \(1.55\) (about \(65\%\) after removing the margin), so the model is a
+little more confident than the market but in the same region. This is a single
+in-season snapshot, not a backtest: the proper comparison will be possible only
+at the end of the season, once the odds have been recorded race by race.
+
+% ---------------------------------------------------------------
+\section{Discussion}
+
+\subsection{What works}
+Three things carried the pre-race model. The grid position, as expected, is the
+backbone. The time-decay weighting, which makes recent seasons count more, was
+the change that moved the number the most. And the careful, honest seed and
+validation choice keeps the reported accuracy fair rather than lucky.
+
+\subsection{The blocks I hit}
+This project taught me as much from what \emph{did not} work as from what did.
+A few blocks are worth writing down:
+
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item \textbf{The TCN was dropped.} The temporal convolutional network on a
+        driver's last races did learn a useful embedding, and before the
+        time-decay weighting was added it improved the validation metric. After
+        the decay weighting was in, the two carried the same signal (recent
+        form) and the TCN no longer added anything: the podium accuracy on
+        validation went slightly down, so it was removed from the final model.
+        The embedding was real, but redundant once a simpler feature already
+        encoded the same information.
+  \item \textbf{Averaging many seeds hurt the ranking metric.} Averaging the
+        probabilities of many models is supposed to be safer, but on
+        precision@3, a metric that only cares about the order of the top three,
+        the averaging smoothed the borderline cases and \emph{lowered} the
+        accuracy. A single well-chosen seed did better.
+  \item \textbf{CPU and GPU gave different trees.} Training the same model on
+        GPU instead of CPU changed the splits enough to lose a couple of points
+        on this small dataset, so I fixed the head model to CPU for
+        reproducibility.
+  \item \textbf{No free odds history.} For tennis I had years of closing odds.
+        For Formula~1 the free archives do not exist, and the betting API I
+        checked does not even list the sport. So the BookMaker comparison had to
+        become a live, week-by-week capture instead of a clean backtest.
+\end{itemize}
+
+\subsection{Why the season model is the hard one}
+The race model has a strong, almost mechanical signal in the grid. The season
+model does not. Early in the year the title is open, and the only honest
+prediction is an uncertain one. This is why the calibration step is not a detail
+in that model, it is the core of it. A title prediction that says \(100\%\)
+after five races is not bold, it is broken.
+
+\subsection{Limitations and future work}
+The first limitation is the size of the yearly test. With 24 races every metric
+is noisy, and the only real cure is to wait for more seasons. The second is data
+depth. I used results and standings, not the lap-by-lap telemetry that exists
+from 2023 on, which could feed long-run pace and tyre features. A natural next
+step is to add those, and to keep writing down the 2026 championship odds, so
+that by the end of the season I finally have a clean book to compare the season
+model against.
+
+% ---------------------------------------------------------------
+\section{Conclusion}
+I built two Formula~1 prediction models on free public data. One is a pre-race
+model that estimates the podium, the other a full-season model that estimates
+the champion. The pre-race model reaches a precision@3 of about \textbf{0.778}
+on the 2025 test season, above the \(0.750\) of the qualifying-grid baseline and
+well above the \(0.639\) of a logistic regression on the same features; with the
+seed picked on the validation year it reaches 0.833, but the reproducible number
+is the honest one. The season model only becomes trustable after a
+softmax-plus-temperature step that stops it from being overconfident.
+
+As with tennis, the part I keep is the method more than the model. How to weight
+data that ages, how to choose a seed without cheating, and how to calibrate a
+multi-driver probability so it sums to one. The models are a small piece of
+code. The discipline around them is what I carry to the next project.
+
+% ---------------------------------------------------------------
+\section{References}
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+  \item Ergast Developer API and the Jolpica-F1 successor, \textit{Formula~1
+        results database}, 1950--present.
+  \item L.~Prokhorenkova, G.~Gusev, A.~Vorobev, A.~V.~Dorogush, A.~Gulin,
+        ``CatBoost: unbiased boosting with categorical features,''
+        \textit{NeurIPS}, 2018.
+  \item G.~W.~Brier, ``Verification of forecasts expressed in terms of
+        probability,'' \textit{Monthly Weather Review}, 1950.
+  \item A.~Niculescu-Mizil, R.~Caruana, ``Predicting good probabilities with
+        supervised learning,'' \textit{ICML}, 2005.
+  \item C.~Guo, G.~Pleiss, Y.~Sun, K.~Q.~Weinberger, ``On calibration of modern
+        neural networks,'' \textit{ICML}, 2017.
+\end{enumerate}
+
+\end{document}

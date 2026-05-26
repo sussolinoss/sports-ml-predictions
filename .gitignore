@@ -1,0 +1,53 @@
+# Secrets — never commit
+.env
+.env.*
+*.key
+secrets.*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.ipynb_checkpoints/
+
+# Data (raw downloads + processed artifacts). Re-created by the pipeline from the
+# public API; trained weights ship as GitHub release assets, not in the repo.
+data/
+**/data/
+fastf1_cache/
+**/cache/
+*.zip
+*.parquet
+
+# Trained model weights / artifacts
+*.cbm
+*.pt
+**/processed/
+
+# Personal paper-trading bet logs
+**/*paper_bets.csv
+
+# Sports / scratch kept out of this repo (paper covers F1 + tennis only)
+motogp/
+snooker/
+nhl/
+darts/
+
+# Tooling internals and conversation exports — never publish
+.claude/
+*.html
+
+# LaTeX build intermediates (keep .tex and .pdf)
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,505 @@
+\documentclass[10pt,twocolumn]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+\titleformat{\section}[block]{\centering\scshape\large}{\thesection.}{0.5em}{}
+\titleformat{\subsection}[block]{\bfseries}{\thesubsection}{0.5em}{}
+\setlength{\columnsep}{0.8cm}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\small\itshape Tennis match prediction with machine learning}
+\renewcommand{\headrulewidth}{0pt}
+
+\title{\bfseries Tennis match prediction with machine learning}
+\author{%
+  Simone Bonasorta\\ Liceo Scientifico Nicola Pizi, Palmi
+}
+\date{}
+
+\begin{document}
+\twocolumn[%
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{center}\textbf{Abstract}\end{center}
+    \noindent
+    I made this project for amateur reasons and for fun, to grow my knowledge
+    of machine learning, that until now was limited to Anomaly Detection and
+    not to win prediction. The idea is that the model works on thousands of
+    matches collected from the early 2000s (2005 to 2026) up to today. The
+    goal is to estimate the win probability of a player using only the
+    statistics of his past matches, the ELO score, and a rating that can be
+    compared on a global scale. The model predicts before the match starts,
+    based on who the players are and the context they play in, nothing more
+    and nothing less; the strong part are the features I extract and use.
+    In this paper I show how I built the model, how it compares to the best
+    amateur attempt I know about, and how the accuracy relates to the
+    probabilities used by the BookMaker, the AI that runs on betting sites
+    when you bet pre-match or in-match and tells how much one bet should pay
+    with respect to another.
+    \vspace{0.6em}
+  \end{@twocolumnfalse}
+]
+
+% ---------------------------------------------------------------
+\begin{center}\scshape\large Indices\end{center}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item[0.] \textbf{Abstract:} A short summary of the project, what I built
+            and what I found.
+  \item[1.] \textbf{Introduction:} Why I worked on tennis prediction and the
+            personal context of the project.
+  \item[2.] \textbf{Related work:} The best amateur attempt I know about and
+            the role of the BookMaker.
+  \item[3.] \textbf{Methodology:} Strategy, architecture, dataset,
+            preprocessing and features.
+  \item[4.] \textbf{Results:} Accuracy, calibration, confusion matrix and
+            comparison with the BookMaker.
+  \item[5.] \textbf{Discussion:} What works in the model, why it does not
+            beat the BookMaker, and ideas for future work.
+  \item[6.] \textbf{Conclusion:} Final remarks and what I take from the
+            project.
+  \item[7.] \textbf{References.}
+\end{enumerate}
+
+% ---------------------------------------------------------------
+\section{Introduction}
+I made this project for amateur reasons and for fun, to grow my knowledge of
+machine learning, that until now was limited to Anomaly Detection and not to
+win prediction. Tennis is a good problem for this: the data is clean, the
+result is binary (one player wins, the other loses) and public datasets
+exist with more than twenty years of matches.
+
+My starting question was simple: how high can I push the accuracy of a
+tennis predictor, using only free public data? Public attempts I found
+online, in particular the one I describe in the next section, stop around
+\textbf{60--63\% accuracy}. That number became my reference: I wanted to see
+if the limit comes from the data or from the techniques used, and how much
+further you can go when the pipeline is done well.
+
+I want to be clear on one thing from the start. The output of my model is a
+\emph{probability}, not a bet. I never used it to place real bets and I
+never tried to tune it for profit. The right point of comparison for these
+probabilities is the BookMaker, that I describe in the next section.
+
+% ---------------------------------------------------------------
+\section{Related Work}
+
+\subsection{Public amateur baseline}
+The clearest amateur attempt I know about is the YouTube tutorial by the
+channel \textit{Green Code} [7], that builds a Random Forest on a small
+set of features (ELO ratings, ranking, surface) and reaches around
+\textbf{60--63\% accuracy} on its test set. This is my reference: any
+honest improvement to the pipeline should show as a clear gain over this
+number, on data the model has not seen during training.
+
+\subsection{The BookMaker}
+The BookMaker is the AI that runs on betting sites: when you bet, both
+pre-match and in-match, it tells how much one bet should pay with respect
+to another. In practice it gives a probability for each player, and if a
+lot of money goes on one side the probability of that side goes up and the
+payout on the other side goes down.
+
+Given two decimal odds \(o_1, o_2\), the implied probabilities, after
+removing the margin of the bookmaker, are
+\begin{equation}
+  \hat{p}_1 = \frac{1/o_1}{1/o_1 + 1/o_2}, \qquad
+  \hat{p}_2 = 1 - \hat{p}_1.
+\end{equation}
+The number \(\hat{p}_1\) is the probability that player~1 wins according to
+the BookMaker. This is the natural number to compare my model against,
+because it is also a probability, set by a serious system, on the same
+matches.
+
+In the rest of the paper I use the closing odds of \textit{Pinnacle},
+a sharp bookmaker that is known to set accurate prices on the ATP main
+tour.
+
+% ---------------------------------------------------------------
+\section{Methodology}
+
+\subsection{Strategy}
+I chose to work only on \textbf{pre-match} prediction. This means that for
+every match the model can only see what was known \emph{before} the first
+ball was played: rankings, surface, recent results, statistics,
+head-to-head, and the closing odds (that are also fixed before the start
+of the match). I did not use in-play data, like live score or live odds.
+
+The reason is mostly about method. Pre-match prediction is the cleanest
+case to study, because the inputs are well defined and the risk of
+leaking the result is much smaller. It is also the same setting used by
+the amateur baseline I want to compare with, so the comparison is fair.
+
+Inside this setting, my strategy was to start from a simple ELO baseline
+and add features one by one, measuring each time the gain on a fixed
+validation set. This way I always knew how much each piece was bringing,
+and I avoided the typical mistake of stacking many techniques together
+without understanding what they actually do.
+
+\subsection{Architecture}
+The model is a gradient boosted tree ensemble, made with \textbf{XGBoost}
+[4]. I did not use a neural network: with around \num{40000} matches and
+hand-built features, boosted trees usually do at least as well as a neural
+network, and the feature importance is much easier to read. This mattered
+to me, because I wanted to check at each step that the model was really
+using the features I expected, and not random patterns.
+
+On top of the raw XGBoost output, I applied an \textbf{isotonic regression}
+calibrator, fitted on the validation set. Calibration does not change
+which player is predicted as the winner, but it makes the probability
+trustable: when the calibrated model says ``80\%'', the player actually
+wins around 80\% of the times. This is important when you want to compare
+the model with the BookMaker, that already gives you a probability.
+
+I also tried, as a small extension, to stack a second model on top of the
+XGBoost output and the ELO baseline, using out-of-fold predictions and a
+meta logistic regression. The gain on the test set was below half a
+point, so I kept the calibrated XGBoost as the main model.
+
+\subsection{Data Collection}
+The main data source is the \texttt{tennis\_atp} repository of Jeff
+Sackmann [1], free on GitHub. It contains all ATP matches from the early
+2000s, with rankings, surface, tournament level, round, scores and serve
+statistics per match. After loading all the yearly CSV files I got around
+\num{63000} matches between 2005 and 2026.
+
+For the BookMaker reference I used historical closing odds from
+\textit{tennis-data.co.uk} [2], that publishes weekly Excel files with the
+closing prices of many bookmakers, in particular Pinnacle and Bet365. I
+was able to attach closing odds to around \num{33000} matches, mostly
+from 2013 on, and only for the ATP main tour.
+
+The split is strictly in time. The first seasons are used as a burn-in to
+let the ELO ratings stabilise, the central seasons are the training set,
+the next season is the validation, and the most recent seasons (2025 and
+the part of 2026 already played) are the held-out test. A random split
+would let the model see future information of the same player, and the
+accuracy would be wrong without me noticing. This is exactly the kind of
+mistake the project tries to avoid.
+
+\subsection{Data Preprocessing}
+A few preprocessing steps were applied before training:
+
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item \textbf{Row filtering:} I removed walkovers and matches retired
+        before the first game, because they are not a real tennis
+        result.
+  \item \textbf{Player swap randomisation:} for every match I decided in
+        a random but reproducible way (seeded by date and match number)
+        if the winner is labelled as ``player~1'' or ``player~2''.
+        Without this step the model would just learn the trivial rule
+        ``player~1 always wins'' and the accuracy would mean nothing.
+  \item \textbf{State-before-match rule:} for every match, the features
+        are computed from the state of the world \emph{before} the match
+        starts, and the state is updated only after. This rule is the
+        most important step of the whole pipeline: if you do it in the
+        wrong order, the result leaks into the features and the accuracy
+        becomes fake.
+  \item \textbf{Splitting:} the cleaned dataset was split by date into
+        training, validation and test, with the validation used both for
+        early stopping and for the calibrator.
+\end{itemize}
+
+\subsection{Features Used}
+The feature vector of each match is made of five groups.
+
+\paragraph{ELO features.} The first feature is the ELO rating itself,
+that gives a single number for the strength of a player. I keep a
+general ELO rating and a surface-specific one (Hard, Clay, Grass,
+Carpet) [3]. To turn the ELO ratings of the two players into a
+probability before the match, I use the standard ELO formula
+\begin{equation}
+  E_A = \frac{1}{1 + 10^{(R_B - R_A)/400}},
+\end{equation}
+which says that if \(R_A = R_B\) the probability is \(0.5\), and that
+every 400 points of difference multiply the odds by 10. After the
+match the ratings are updated by
+\begin{equation}
+  R_A' = R_A + K\,(S_A - E_A),
+\end{equation}
+where \(S_A\in\{0,1\}\) is the result of the match and \(K\) is a
+learning rate that goes down with the number of matches played, so
+that young players move faster than veterans. I use the ratings, the
+surface ratings and their differences as features.
+
+\paragraph{Ranking features.} I use the official ATP ranking and the
+ranking points of both players, and their differences. To make the
+behaviour more stable for very different rankings (like a top~5
+against a top~300) I also use \(\log\)-transformed differences,
+because raw differences in those cases would be huge and not really
+informative.
+
+\paragraph{Recent form and head-to-head.} For each player I compute
+the fraction of wins in the last 10 matches, separately overall and
+on the same surface, and the head-to-head record between the two
+players, both in general and on the same surface only.
+
+\paragraph{Serve and physical features.} From the serve statistics of
+the Sackmann dataset I build rolling averages of first-serve
+percentage, points won on first serve, points won on second serve,
+ace and double-fault rates, and break points saved. I also compute a
+fatigue score, defined as the total number of minutes played in the
+last 14 days.
+
+\paragraph{BookMaker-implied probability.} As the last group of
+features I add the implied probability of player~1 from the closing
+odds, computed with the formula of Section~2.2. It is assigned to
+player~1 with the same deterministic swap, not based on the actual
+result, so it does not leak the outcome.
+
+% ---------------------------------------------------------------
+\section{Results}
+
+\subsection{Training Parameters}
+The XGBoost model was trained with log-loss as the objective and with
+early stopping on the validation set. On top of the raw scores I applied
+an isotonic regression calibrator fitted on the same validation set. The
+final calibrated model has around 40--60 boosting rounds, depending on
+the training run, and a maximum tree depth of 6.
+
+\subsection{Evaluation metrics}
+To measure how well the model classifies the matches I use the standard
+binary classification metrics. The first one is the accuracy, that
+counts how often the model picks the right winner over all the matches:
+\begin{equation}
+  \text{Accuracy} = \frac{\text{TP} + \text{TN}}{\text{Total}}.
+\end{equation}
+Accuracy alone is not enough, because it does not tell if the model is
+overconfident on one of the two classes. So I also use precision and
+recall, that look at the wins of player~1 only:
+\begin{align}
+  \text{Precision} &= \frac{\text{TP}}{\text{TP} + \text{FP}}, \\[2pt]
+  \text{Recall}    &= \frac{\text{TP}}{\text{TP} + \text{FN}},
+\end{align}
+and the F1 score, that puts them together as the harmonic mean:
+\begin{equation}
+  \text{F1} = 2\,\frac{\text{Precision}\cdot\text{Recall}}
+                     {\text{Precision} + \text{Recall}}.
+\end{equation}
+For the quality of the predicted probabilities I also report the Brier
+score [6], that is the mean squared error between the predicted
+probability and the actual result (1 if player~1 wins, 0 otherwise):
+\begin{equation}
+  \text{Brier} = \frac{1}{N}\sum_{i=1}^{N} (p_i - y_i)^2 ,
+\end{equation}
+and the log-loss, that punishes confident wrong predictions much harder
+than uncertain wrong predictions:
+\begin{equation}
+  \mathcal{L} = -\frac{1}{N}\sum_{i=1}^{N}
+       \big[y_i \log p_i + (1-y_i)\log(1-p_i)\big].
+\end{equation}
+For both Brier and log-loss, lower values are better.
+
+\subsection{Model performance}
+Table~\ref{tab:metrics} shows the metrics of the calibrated XGBoost model
+on the test set (more than \num{4000} matches from the most recent
+seasons), against the pure ELO baseline I started from.
+
+\begin{table}[t]
+\centering
+\caption{Test-set metrics.}
+\label{tab:metrics}
+\begin{tabular}{lcc}
+\toprule
+Metric & ELO baseline & My model \\
+\midrule
+Accuracy   & 0.634 & \textbf{0.676} \\
+Precision  & 0.633 & \textbf{0.677} \\
+Recall     & 0.640 & \textbf{0.678} \\
+F1 score   & 0.636 & \textbf{0.677} \\
+Brier      & 0.221 & \textbf{0.207} \\
+Log-loss   & 0.630 & \textbf{0.599} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Compared with the \(\sim 63\%\) accuracy of the amateur baseline [7], my
+model gains around \textbf{4 percentage points}, which in this setting
+is a clear jump. Most of the gain comes from two things: the surface
+specific ELO, and the closing-odds probability used as a feature. The
+closing-odds feature alone gives around \(+2\) points and shows up as
+the fourth most important feature, just after the ELO difference, the
+log-ranking difference, and the surface ELO difference.
+
+\subsection{Confusion Matrix}
+Table~\ref{tab:cm} shows how the model classified the test matches.
+The matrix is almost symmetric, which is what you expect from the
+player-swap randomisation: the model has no built-in preference for
+``player~1'' or ``player~2'' and the errors are split between the
+two classes.
+
+\begin{table}[t]
+\centering
+\caption{Confusion matrix on the test set.}
+\label{tab:cm}
+\begin{tabular}{lcc}
+\toprule
+ & Predicted: P1 wins & Predicted: P2 wins \\
+\midrule
+Actual: P1 wins & \num{1421} & \num{673} \\
+Actual: P2 wins & \num{682}  & \num{1408} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration}
+A high accuracy does not mean that the predicted \emph{probabilities}
+are good. To check this, I grouped the test predictions in confidence
+bins and measured the actual win frequency inside each bin
+(Table~\ref{tab:cal}).
+
+\begin{table}[t]
+\centering
+\caption{Calibration on the test set.}
+\label{tab:cal}
+\begin{tabular}{lcc}
+\toprule
+Predicted prob.\ bin & N matches & Observed win rate \\
+\midrule
+0.50--0.60 & 79  & 0.49 \\
+0.60--0.70 & 89  & 0.70 \\
+0.70--0.80 & 20  & 0.70 \\
+0.80--0.90 & 49  & 0.86 \\
+0.90--1.00 & 11  & 0.91 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model is well calibrated above 0.60: when it says ``80\%'' the
+player actually wins around 86\% of the times, and when it says ``90\%''
+the player wins around 91\%. The bin 0.50--0.60 is the hardest, as
+expected: predictions that close to 0.5 are basically uncertain
+matches, and on a small sample the observed win rate can swing.
+
+\subsection{Comparison with the BookMaker}
+The comparison that interested me the most is the one against the
+BookMaker. For every match in the test set with a closing odd, I have
+two predictions: the one of my model and the one implied by the
+BookMaker, both as probabilities of player~1 winning. I compared the
+two on the same matches, both on accuracy (which player is predicted
+as the winner) and on calibration of the probabilities.
+
+The accuracy of my model and the accuracy of the BookMaker on the
+same matches are very close, with a difference inside the statistical
+noise. The calibration curves are also very similar. So, on the ATP
+main tour, the BookMaker is more or less as accurate as my model, and
+the probabilities implied by the closing odds already contain almost
+the same information that my features pull out from the public data.
+
+\subsection{What the model learnt}
+Looking at the feature importance of the trained model, the strongest
+features are the ELO difference, the log-ranking difference, the
+surface ELO difference and the BookMaker-implied probability. Recent
+form, head-to-head and serve statistics also help, but with much
+smaller weight. In tennis, most of the signal is captured by a small
+number of strong, well-known features, and adding many small features
+only helps a little.
+
+% ---------------------------------------------------------------
+\section{Discussion}
+
+\subsection{Strengths of the model}
+The model I built has three things going for it. First, it is built on
+a time-based split, so the test accuracy is a fair guess of how it
+would do on new, unseen matches. Second, the state-before-match rule
+makes sure that no feature contains information that was not yet
+available at the moment of the prediction. Third, the probabilities
+are calibrated: a ``70\%'' from my model really means around 70\%
+chance of winning, and this makes the output directly comparable to
+the BookMaker.
+
+The other strong point is the clear gap with the amateur baseline. By
+going from around 63\% to about 67--68\%, I have shown that the limit
+of public attempts is not the data, it is the techniques used: more
+careful feature engineering, surface-specific ELO and calibration give
+a clear improvement on the same problem.
+
+\subsection{Why my model does not beat the BookMaker}
+The most interesting result is that, even with these techniques, my
+model does not really beat the closing odds. The reason, thinking
+about it after, is simple: the BookMaker has the same public data I
+have, plus the information that comes from how people are betting on
+the match. By the time the match starts, the closing odds have
+basically absorbed everything that ELO, rankings, surface, form and
+serve statistics can tell. A public model ends up using the same
+signal that the market already uses, so it can match the BookMaker
+but rarely go past it.
+
+There is also a second reason, that has nothing to do with the model:
+tennis itself is noisy. Court conditions, momentum, small injuries,
+mental state, all these things put a hard ceiling on what any
+pre-match predictor can do.
+
+\subsection{Limitations and future work}
+The first limitation is that I only used pre-match, free public data.
+I did not use in-play information (live score, live odds) and I did
+not use any non-public signal like injury reports. These would arrive
+later than the closing odds and would let the model react to news
+that the BookMaker has not used yet.
+
+A second limitation is that the closing odds dataset only covers the
+ATP main tour. Smaller tours like the ATP Challenger circuit or the
+WTA might behave differently, but the public odds data needed for a
+fair comparison are much harder to find.
+
+A natural direction for future work is to move to a setting where the
+state of the match changes over time, modelling tennis as a
+point-by-point Markov chain following Klaassen and Magnus [5]. In
+that setting, the probability that each player wins the next point on
+serve fully decides the probability of winning the match at any
+score, and the model can update the prediction during the match.
+
+% ---------------------------------------------------------------
+\section{Conclusion}
+I built a tennis match prediction model on free public data, using
+ELO ratings, surface specific features, recent form, serve statistics
+and the BookMaker-implied probability as a feature. The final
+calibrated XGBoost model reaches around \textbf{67.6\% accuracy} on a
+held-out test set of recent ATP matches, a clear improvement over the
+\(\sim 63\%\) of the amateur baseline I started from.
+
+When I compare the model directly with the BookMaker, however, the
+two are basically the same: the probabilities implied by the closing
+odds already contain the same predictive information that my model
+pulls out. For me this was the most interesting result of the
+project. It shows that the BookMaker is not just a price setter, but
+a serious predictive system, and that going past it would need
+something more: non-public data, or a different kind of model
+(in-play, point by point, or trained on a less liquid market).
+
+Beyond the numbers, what I take from this project is a much more
+concrete idea of how a real prediction pipeline is built: how to
+avoid data leakage, how to split data in time, how to compare models
+in a fair way, and how to read calibration tables. The model itself
+is a small piece of code; the method around it is the part I will
+keep using in the next projects.
+
+% ---------------------------------------------------------------
+\section{References}
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+  \item J.~Sackmann, \textit{Tennis match datasets}, GitHub repository
+        \texttt{tennis\_atp}.
+  \item \textit{tennis-data.co.uk}, historical match data and closing
+        odds.
+  \item A.~Elo, \textit{The Rating of Chessplayers, Past and Present},
+        1978.
+  \item T.~Chen and C.~Guestrin, ``XGBoost: A Scalable Tree Boosting
+        System,'' \textit{KDD}, 2016.
+  \item F.~J.~G.~M.~Klaassen and J.~R.~Magnus, ``Are points in tennis
+        independent and identically distributed?,'' \textit{Journal of
+        the American Statistical Association}, 2001.
+  \item G.~W.~Brier, ``Verification of forecasts expressed in terms of
+        probability,'' \textit{Monthly Weather Review}, 1950.
+  \item Green Code (YouTube channel), tutorial on tennis match
+        prediction with Random Forests.
+\end{enumerate}
+
+\end{document}

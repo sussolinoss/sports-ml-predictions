@@ -1,0 +1,235 @@
+\documentclass[10pt,twocolumn]{article}
+
+% ---- packages (standard TeX Live, compila con pdflatex) ----
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+\titleformat{\section}[block]{\centering\scshape\large}{\thesection.}{0.5em}{}
+\titleformat{\subsection}[block]{\bfseries}{\thesubsection}{0.5em}{}
+\setlength{\columnsep}{0.8cm}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\small\itshape Predicting Formula 1 podiums with machine learning}
+\renewcommand{\headrulewidth}{0pt}
+
+\title{\bfseries Predicting Formula 1 Podiums with Machine Learning:\\
+\large Can a Model Beat the Qualifying Grid?}
+\author{%
+  Author Name\\ Liceo Scientifico, Italy
+}
+\date{}
+
+\begin{document}
+\twocolumn[%
+  \begin{@twocolumnfalse}
+    \maketitle
+    \begin{center}\textbf{Abstract}\end{center}
+    \noindent
+    Predicting the outcome of a Formula~1 race is hard: twenty cars, a dominant
+    machine factor, and chaotic events (safety cars, weather, reliability). We
+    ask a focused question: can a machine learning model predict which drivers
+    finish on the \emph{podium} (top~3) better than the single strongest public
+    signal, the \emph{qualifying grid}? Using free Ergast data (2010--2026), we
+    build a leakage-free feature pipeline (driver and constructor form, track
+    history, reliability, grid position) and train a calibrated gradient-boosting
+    classifier of $P(\text{podium})$. The model is strong in absolute terms
+    (\textbf{AUC $\approx 0.95$}, Brier $0.076$) and well calibrated, but it beats
+    the grid-only baseline on the podium-ranking metric (precision@3) by only
+    \textbf{$+1.4$ points} over a full season ($0.764$ vs $0.750$). We conclude
+    that qualifying already encodes most of the predictive signal---car pace,
+    driver form and track---and that machine learning adds a small but real
+    improvement on top.
+    \vspace{0.6em}
+  \end{@twocolumnfalse}
+]
+
+% ---------------------------------------------------------------
+\begin{center}\scshape\large Indices\end{center}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item[0.] \textbf{Abstract:} summary of problem, method and findings.
+  \item[1.] \textbf{Introduction:} why podium prediction, and why the grid is a
+            hard baseline.
+  \item[2.] \textbf{Related work:} motorsport data and the role of qualifying.
+  \item[3.] \textbf{Methodology:} data, leakage-free features, model, calibration
+            and evaluation.
+  \item[4.] \textbf{Results:} AUC, calibration, precision@3 vs grid, feature
+            importance.
+  \item[5.] \textbf{Discussion:} car vs driver, limitations.
+  \item[6.] \textbf{Conclusion.}
+  \item[7.] \textbf{References.}
+\end{enumerate}
+
+% ---------------------------------------------------------------
+\section{Introduction}
+Formula~1 is dominated by the car: a top constructor's driver is far more likely
+to reach the podium than a talented driver in a slow car. The result of
+qualifying---the starting grid---compresses car pace, driver form and track
+suitability into a single number, and is therefore an extremely strong predictor
+of the race result. Any useful model must \emph{beat the grid}, not merely
+correlate with it.
+
+We focus on a clean, well-posed target: the probability that a driver finishes
+on the podium (top~3). This turns a messy 20-way ranking problem into a
+calibrated binary classification, and admits a natural ranking metric: of the
+three drivers with the highest predicted podium probability, how many actually
+make the podium (precision@3). Our research question is whether a machine
+learning model can exceed the grid baseline on this metric.
+
+% ---------------------------------------------------------------
+\section{Related Work}
+Public motorsport data are available through the Ergast API (and its community
+mirror jolpica-f1), covering results, grids and lap times since 1950. Analyses of
+Formula~1 consistently find that grid position and constructor strength are the
+dominant explanatory variables, while race-day chaos (safety cars, weather,
+mechanical failures) imposes an irreducible noise floor on any predictor.
+
+% ---------------------------------------------------------------
+\section{Methodology}
+
+\subsection{Target}
+For each (driver, race) we define the binary label
+\begin{equation}
+  y = \mathbb{1}[\text{finishing position} \le 3].
+\end{equation}
+The base rate is $3/20 = 0.15$. We model $P(y=1)$ per driver per race.
+
+\subsection{Data}
+We collect race results from the Ergast/jolpica API for seasons 2010--2026:
+about \num{7000} (driver, race) records with finishing position, starting grid,
+constructor, status (finished / retired) and points. Records are ordered
+chronologically by race date.
+
+\subsection{Leakage-free features}
+\textbf{Golden rule:} every feature uses only information from \emph{previous}
+races; the state is updated only after each race is processed. Features:
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+  \item \textbf{Grid position} (known pre-race, after qualifying).
+  \item \textbf{Driver form}: average finishing position over the last 5 races.
+  \item \textbf{Driver points form}: average points over the last 5 races.
+  \item \textbf{Driver podium rate}: fraction of podiums in the last 10 races.
+  \item \textbf{Driver reliability}: DNF rate over the last 10 races.
+  \item \textbf{Constructor form}: average finish of the team (last 12 results),
+        a proxy for car pace.
+  \item \textbf{Constructor podium rate}.
+  \item \textbf{Driver track history}: average finish at this circuit.
+  \item \textbf{Round} in the season.
+\end{itemize}
+Neutral priors are used until enough history accumulates (e.g.\ mid-field finish
+$10.5$, podium prior $0.15$).
+
+\subsection{Model and calibration}
+We train an XGBoost binary classifier with a strictly temporal split (older
+seasons for training, the previous season for validation, the most recent season
+held out for testing). Probabilities are calibrated with isotonic regression on
+the validation set, so that a predicted ``$70\%$ podium'' truly corresponds to a
+$70\%$ frequency. Probability quality is measured by log-loss and the Brier
+score.
+
+\subsection{Evaluation}
+Because podiums are rare (15\%), raw accuracy is misleading; we report the area
+under the ROC curve (AUC) and the Brier score for probability quality, and a
+race-level ranking metric:
+\begin{equation}
+  \text{precision@3} =
+  \frac{1}{3R}\sum_{r=1}^{R}\;\sum_{d \in \text{top-3}(r)} y_{d,r},
+\end{equation}
+where for each of the $R$ races we take the three drivers with the highest
+predicted probability. The baseline ranks drivers by grid position
+(front of the grid $=$ most likely podium).
+
+% ---------------------------------------------------------------
+\section{Results}
+
+\subsection{Probability quality}
+The calibrated model discriminates podium from non-podium very well
+(Table~\ref{tab:f1q}): an AUC around $0.95$ on a full held-out season.
+
+\begin{table}[t]
+\centering
+\caption{Probability quality on a held-out season (24 races).}
+\label{tab:f1q}
+\begin{tabular}{lccc}
+\toprule
+Metric & AUC & Brier & LogLoss \\
+\midrule
+Calibrated $P(\text{podium})$ & 0.95 & 0.076 & 0.22 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Beating the grid}
+The decisive comparison is precision@3 against the grid baseline
+(Table~\ref{tab:f1p}). Over a full 24-race season the model beats the grid by a
+small but real margin; on a tiny 5-race sample the difference is within noise.
+
+\begin{table}[t]
+\centering
+\caption{Precision@3: of the 3 predicted favourites, how many reach the podium.}
+\label{tab:f1p}
+\begin{tabular}{lccc}
+\toprule
+Test set & Model & Grid baseline & $\Delta$ \\
+\midrule
+Full season (24 races) & \textbf{0.764} & 0.750 & $+1.4$ pt \\
+Early season (5 races) & 0.533 & 0.600 & $-6.7$ pt$^\dagger$ \\
+\bottomrule
+\end{tabular}\\[2pt]
+{\footnotesize $^\dagger$ Small-sample noise; not significant.}
+\end{table}
+
+\subsection{Feature importance}
+The dominant features confirm the intuition: \emph{grid position} is by far the
+most important, followed by \emph{driver podium rate} and \emph{constructor}
+strength (car pace). Driver track history and reliability contribute marginally.
+
+% ---------------------------------------------------------------
+\section{Discussion}
+The car (constructor) and the starting grid dominate Formula~1 outcomes, and
+qualifying already aggregates car pace, driver form and track suitability into a
+single number. A machine learning model that adds rolling form, reliability and
+track history improves podium ranking only slightly over the grid alone. This is
+consistent with the view that the grid is a near-optimal, low-variance predictor,
+and that the remaining variability (safety cars, weather, failures) is largely
+irreducible from pre-race data.
+
+\textbf{Limitations.} The most recent season provides only a few races, so its
+precision@3 is noisy; a full season is needed for a stable estimate. We did not
+evaluate against betting odds (no free historical podium-market odds), so we
+measure predictive improvement over the grid, not economic edge. Lap-by-lap
+telemetry (e.g.\ FastF1) and weather data could capture in-race dynamics we
+ignore.
+
+% ---------------------------------------------------------------
+\section{Conclusion}
+A calibrated machine learning model predicts Formula~1 podiums very well in
+absolute terms (AUC $\approx 0.95$) and improves on the qualifying-grid baseline
+by a small but real margin ($+1.4$ precision@3 points over a full season). The
+result quantifies how strong the grid already is as a predictor and how much
+additional signal driver/constructor form contributes. Future work includes
+lap-level telemetry, weather, and extending the binary podium target to full
+finishing-order modelling.
+
+% ---------------------------------------------------------------
+\section{References}
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt]
+  \item Ergast Developer API, \textit{Formula 1 results database}; community
+        mirror \textit{jolpica-f1}.
+  \item T.~Chen, C.~Guestrin, ``XGBoost: A Scalable Tree Boosting System,''
+        \textit{KDD}, 2016.
+  \item B.~Zadrozny, C.~Elkan, ``Transforming classifier scores into accurate
+        multiclass probability estimates'' (isotonic calibration), \textit{KDD},
+        2002.
+  \item J.~Davis, M.~Goadrich, ``The relationship between Precision-Recall and
+        ROC curves,'' \textit{ICML}, 2006.
+\end{enumerate}
+
+\end{document}
