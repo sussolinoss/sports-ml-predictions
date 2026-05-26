@@ -8,7 +8,8 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/models-CatBoost%20%7C%20XGBoost-512BD4.svg" alt="Models">
   <img src="https://img.shields.io/badge/license-CC%20BY%204.0-green.svg" alt="License: CC BY 4.0">
-  <a href="https://zenodo.org/records/20402346"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20402346-blue.svg" alt="DOI"></a>
+  <a href="https://zenodo.org/records/20402346"><img src="https://img.shields.io/badge/DOI%20F1-10.5281%2Fzenodo.20402346-blue.svg" alt="F1 DOI"></a>
+  <a href="https://zenodo.org/records/20402512"><img src="https://img.shields.io/badge/DOI%20Tennis-10.5281%2Fzenodo.20402512-blue.svg" alt="Tennis DOI"></a>
 </p>
 
 <p align="center">
@@ -115,9 +116,11 @@ The same pipeline applied to both sports:
 
 ## Citation
 
-The paper is archived on Zenodo with a DOI:
-[10.5281/zenodo.20402346](https://zenodo.org/records/20402346). Please cite it if
-you use this work.
+Both papers are archived on Zenodo with a DOI — please cite them if you use this
+work:
+
+- **F1**: [10.5281/zenodo.20402346](https://zenodo.org/records/20402346)
+- **Tennis**: [10.5281/zenodo.20402512](https://zenodo.org/records/20402512)
 
 ## License
 
