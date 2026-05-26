@@ -139,6 +139,13 @@ for this sport the BookMaker comparison is done live, on the 2026 season, by
 writing down the championship odds of an Italian bookmaker (Sisal) and comparing
 them with the season model week by week.
 
+One clarification on framing. The odds are an efficient-market approximation, not
+ground truth: they are not the "right" answer, just a strong, money-backed
+estimate. So when I compare my probabilities to them I am doing a qualitative
+calibration check (do my numbers live in the same region as a serious market?),
+not claiming to beat the market. Beating a liquid market on free public data is
+not the goal of this project.
+
 % ---------------------------------------------------------------
 \section{Methodology}
 
@@ -277,7 +284,10 @@ finish on the podium, then average over the races:
   \text{precision@3} = \frac{1}{R}\sum_{r=1}^{R}
        \frac{\#\{\text{top-3 picks on the podium in race } r\}}{3}.
 \end{equation}
-For the quality of the probabilities, in both models, I report the Brier score
+Since precision@3 only counts hits and ignores the order inside the top three, I
+also report \textbf{NDCG@3}, a standard ranking metric that rewards putting the
+actual podium drivers higher in the predicted order. For the quality of the
+probabilities, in both models, I report the Brier score
 [3], the mean squared error between the predicted probability and the result:
 \begin{equation}
   \text{Brier} = \frac{1}{N}\sum_{i=1}^{N} (p_i - y_i)^2 ,
@@ -307,21 +317,52 @@ Rule & precision@3 \\
 Recent podium-rate (last 10) & 0.639 \\
 Logistic regression (same features) & 0.639 \\
 Qualifying grid              & 0.750 \\
-My model, reproducible run (AUC 0.94, Brier 0.061) & \textbf{0.778} \\
+My model, reproducible run (AUC 0.94, Brier 0.061, NDCG@3 0.826) & \textbf{0.778} \\
 My model, best seed on validation & 0.833 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The size of the test calls for caution. A season is only 24 races, so
-precision@3 is noisy: the standard error is in the order of several points, and
-the gap of about 3 points over the grid on the reproducible run is well within
-what one season can prove. I read it as a real but small improvement that needs
-more seasons to confirm. Picking the seed on the validation year pushes the test
-number up to 0.833, but that is a best-of selection, not the typical run; the
-plain reproducible model is the honest headline. The era also matters: with one
-or two dominant cars the podium is more predictable, so the ceiling is higher
-than in a season where everyone wins.
+The size of the test calls for caution, and I want to quantify it instead of
+hand-waving. Bootstrapping the 24 test races (resampling races with replacement,
+2000 times) gives a 95\% confidence interval on precision@3 of
+\textbf{[0.708, 0.847]}. The grid baseline (0.750) sits inside that interval, so
+the 0.778 is a \emph{suggestive, not statistically significant} improvement on a
+single season. NDCG@3 is 0.826, which says the order inside the top three is
+mostly right even when a pick misses. Picking the seed on the validation year
+pushes the point estimate to 0.833, but that is a best-of selection, not the
+typical run; the plain reproducible model is the honest headline. The era also
+matters: with one or two dominant cars the podium is more predictable, so the
+ceiling is higher than in a season where everyone wins.
+
+\subsection{Ablation}
+To see which features actually carry the model, I removed one feature group at a
+time and retrained (Table~\ref{tab:ablation}). Only one group moves the number
+clearly: removing grid and qualifying drops precision@3 by about 14 points. Every
+other group sits within the bootstrap noise band, and removing some of them even
+nudges the metric up on this one season, which is exactly what a wide confidence
+interval predicts. The honest reading is that the qualifying signal is the
+backbone, and the rest of the features help mostly through calibration and
+robustness rather than through a clear, season-proof accuracy gain.
+
+\begin{table}[t]
+\centering
+\caption{Ablation: precision@3 when one feature group is removed (test 2025,
+full model 0.778).}
+\label{tab:ablation}
+\begin{tabular}{lcc}
+\toprule
+Removed group & precision@3 & $\Delta$ \\
+\midrule
+grid + qualifying & 0.639 & $-13.9$ \\
+track history     & 0.778 & $\pm0$ \\
+track-type        & 0.792 & $+1.4$ \\
+lag (last 1--3)   & 0.833 & $+5.6$ \\
+street + recovery & 0.833 & $+5.6$ \\
+form              & 0.833 & $+5.6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 As a real held-out check, Table~\ref{tab:2026} puts the model's podium call next
 to the actual podium for the first five races of the 2026 season. The model was
@@ -463,6 +504,25 @@ model does not. Early in the year the title is open, and the only honest
 prediction is an uncertain one. This is why the calibration step is not a detail
 in that model, it is the core of it. A title prediction that says \(100\%\)
 after five races is not bold, it is broken.
+
+\subsection{What would break this model}
+It is worth being explicit about where this model would fail, because the
+features lean on assumptions that are only true in normal seasons:
+\begin{itemize}[leftmargin=1.2em,itemsep=2pt]
+  \item \textbf{A regulation reset.} The 2026 rule change (and the 2027 one) can
+        reshuffle the order. The time-decay weighting helps it adapt faster, but
+        the first races of a new era are the hardest, because the recent past is
+        no longer a good guide.
+  \item \textbf{Rain-heavy seasons.} The model has almost no wet-weather signal.
+        A season with many wet races, where grid position matters less and chaos
+        matters more, would hurt the precision@3.
+  \item \textbf{A new dominant team appearing.} The constructor features are
+        rolling, so a sudden rise (or fall) takes a few races to be reflected,
+        and the model will lag during the transition.
+  \item \textbf{A very open field.} The whole edge over the grid shrinks when no
+        car dominates: the more random the podium, the closer any model gets to
+        the baseline.
+\end{itemize}
 
 \subsection{Limitations and future work}
 The first limitation is the size of the yearly test. With 24 races every metric
