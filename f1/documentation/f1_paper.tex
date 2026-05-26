@@ -30,6 +30,8 @@
 \twocolumn[%
   \begin{@twocolumnfalse}
     \maketitle
+    \begin{center}\small All pipeline available on
+      \texttt{github.com/sussolinoss/sports-ml-predictions}\end{center}
     \begin{center}\textbf{Abstract}\end{center}
     \noindent
     I made this project after the tennis one, to keep growing my knowledge of
@@ -262,16 +264,6 @@ For the season model the features are different in nature: current championship
 points and position, gap to the leader (absolute and as a fraction), points per
 race, podium count so far, momentum over the last three races, and a head-to-head
 measure against the current leader.
-
-\subsection{Code and data}
-The data is the public Ergast / Jolpica database [1]. The race dataset has about
-\num{26000} driver-race rows, the season dataset about \num{22000}. The feature
-code, the time-decay weighting, the isotonic calibrator [4] and the
-softmax-plus-temperature step [5] are in Python (CatBoost, scikit-learn). The
-full pipeline, the per-race predictions of the 2025 test season, and the
-trained models are published on GitHub
-(\texttt{github.com/sussolinoss/sports-ml-predictions}, see the tagged release), so every
-number in this paper can be reproduced from the same code and weights.
 
 % ---------------------------------------------------------------
 \section{Results}
