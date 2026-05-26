@@ -1,16 +1,16 @@
 """
-Meteo gara via FastF1 (dati 2018+). Per ogni gara dice se ha piovuto.
+Race weather via FastF1 (2018+ data). For each race, tells whether it rained.
 
-ATTENZIONE LEAKAGE: la pioggia *durante la gara* non e' nota PRIMA della gara.
-Quindi:
-  - `is_wet` (gara corrente bagnata) = informazione col-senno-di-poi / da forecast:
-    usala solo per analisi di scenario o se hai un forecast affidabile.
-  - `driver_wet_form` (resa storica del pilota sul bagnato) = anti-leakage, legittima.
+LEAKAGE WARNING: rain *during the race* is not known BEFORE the race.
+So:
+  - `is_wet` (current race was wet) = hindsight / forecast information:
+    use it only for scenario analysis or if you have a reliable forecast.
+  - `driver_wet_form` (driver's historical wet-weather performance) = anti-leakage, legitimate.
 
-Richiede:  pip install fastf1   (gia' in requirements.txt)
+Requires:  pip install fastf1   (already in requirements.txt)
 
-Uso:
-    python -m fastf1_weather        # scarica/cacha la pioggia per gara 2018+
+Usage:
+    python -m fastf1_weather        # download/cache the rain per race for 2018+
 """
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ WET_FILE = ROOT / "data" / "f1" / "processed" / "race_weather.json"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 WET_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-FIRST_WEATHER_SEASON = 2018  # FastF1 ha meteo affidabile dal 2018
+FIRST_WEATHER_SEASON = 2018  # FastF1 has reliable weather from 2018 on
 
 
 def _race_wet_fraction(year: int, rnd: int) -> float | None:
-    """Frazione di campioni meteo con pioggia durante la gara. None se non disponibile."""
+    """Fraction of weather samples with rain during the race. None if unavailable."""
     import fastf1
     try:
-        fastf1.set_log_level("ERROR")   # silenzia i log INFO verbosi
+        fastf1.set_log_level("ERROR")   # silence verbose INFO logs
     except Exception:  # noqa: BLE001
         pass
     fastf1.Cache.enable_cache(str(CACHE_DIR))
@@ -41,15 +41,15 @@ def _race_wet_fraction(year: int, rnd: int) -> float | None:
         w = s.weather_data
         if w is None or "Rainfall" not in w or len(w) == 0:
             return None
-        return float(w["Rainfall"].mean())  # frazione di tempo con pioggia
-    except Exception as e:  # noqa: BLE001  (sessione mancante / errore rete)
+        return float(w["Rainfall"].mean())  # fraction of time with rain
+    except Exception as e:  # noqa: BLE001  (missing session / network error)
         if "RateLimit" in type(e).__name__:
             raise
         return None
 
 
 def build_weather(years, max_round: int = 24, overwrite: bool = False) -> dict:
-    """Costruisce/aggiorna race_weather.json: {"season-round": wet_fraction}."""
+    """Build/update race_weather.json: {"season-round": wet_fraction}."""
     data = {}
     if WET_FILE.exists() and not overwrite:
         data = json.loads(WET_FILE.read_text())
@@ -73,12 +73,12 @@ def build_weather(years, max_round: int = 24, overwrite: bool = False) -> dict:
                 continue
             data[key] = frac
             print(f"  {key}: pioggia {frac:.0%}")
-            WET_FILE.write_text(json.dumps(data))  # incrementale
+            WET_FILE.write_text(json.dumps(data))  # incremental
     return data
 
 
 def load_wet_map(wet_threshold: float = 0.10) -> dict:
-    """Ritorna {(season, round): is_wet 0/1} da race_weather.json."""
+    """Returns {(season, round): is_wet 0/1} from race_weather.json."""
     if not WET_FILE.exists():
         return {}
     raw = json.loads(WET_FILE.read_text())

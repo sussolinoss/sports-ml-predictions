@@ -1,16 +1,16 @@
 """
-Walk-forward validation — il test ONESTO per capire se l'edge e' reale.
+Walk-forward validation — the HONEST test of whether the edge is real.
 
-Niente cherry-picking: si definisce UN filtro (min_edge/level/surface/book) e lo si
-applica identico su piu' finestre temporali consecutive, ognuna testata su dati MAI
-visti in training. Per ogni finestra: ritraina XGBoost + calibrazione isotonica sul
-passato, predice la finestra, scommette col filtro fisso. Alla fine: ROI per finestra
-+ intervallo di confidenza 95% bootstrap sul pool di TUTTE le bet.
+No cherry-picking: define ONE filter (min_edge/level/surface/book) and apply it
+identically across several consecutive time windows, each tested on data NEVER
+seen in training. For each window: retrain XGBoost + isotonic calibration on the
+past, predict the window, bet with the fixed filter. At the end: ROI per window
++ 95% bootstrap confidence interval on the pool of ALL bets.
 
-Se l'IC del pool e' sopra ~+1.5% su tutte/quasi le finestre -> edge plausibilmente reale.
-Se contiene zero (probabile) -> non scommettere, e' rumore.
+If the pool's CI is above ~+1.5% on all/most windows -> edge plausibly real.
+If it contains zero (likely) -> don't bet, it's noise.
 
-USO:
+USAGE:
     python -m walkforward --start 2024-01-01 --end 2025-09-30 --step 3 \\
         --book PS --min_edge 0.04 --level GrandSlam,Masters1000 --surface Hard,Grass
 """
@@ -38,7 +38,7 @@ from feature_engineering import FEATURE_COLUMNS
 from odds_loader import build_pair_index, load_odds
 from backtest import bets_from_predictions, bootstrap_roi, _id_to_name
 
-VAL_DAYS = 90  # ultimi 90 giorni del training usati per early-stopping + calibrazione
+VAL_DAYS = 90  # last 90 days of training used for early-stopping + calibration
 
 
 def _train_window(train_df: pd.DataFrame, val_df: pd.DataFrame):

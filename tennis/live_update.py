@@ -1,27 +1,27 @@
 """
-Template per l'aggiornamento LIVE (in-play) della predizione.
+Template for the LIVE (in-play) prediction update.
 
-Strategia: hai due predizioni che combini.
+Strategy: you have two predictions that you combine.
 
-1) Predizione PRE-MATCH del modello XGBoost (P_model)
-2) Predizione LIVE basata sullo stato corrente del match (P_live)
-   - Per tennis: catena di Markov sui punti (chi serve, chi conduce nei set)
-   - Per F1: posizione attuale, mescola gomme, distacchi, SC/VSC
-   - Per MotoGP: simile a F1
+1) PRE-MATCH prediction from the XGBoost model (P_model)
+2) LIVE prediction based on the current match state (P_live)
+   - For tennis: Markov chain over points (who serves, who leads in sets)
+   - For F1: current position, tyre compounds, gaps, SC/VSC
+   - For MotoGP: similar to F1
 
-Output combinato:
+Combined output:
     P_final = alpha * P_live + (1 - alpha) * P_model
-con alpha che cresce man mano che il match avanza
-(perché lo stato live diventa più informativo del pre-match).
+with alpha growing as the match progresses
+(because the live state becomes more informative than the pre-match one).
 
-Per le QUOTE LIVE dei bookmaker (suggerimento dello screenshot Gemini):
-    Usale come ULTERIORE feature, non come fonte di verità diretta:
-      bookmaker_proba_p1 = (1/quota_p1) / sum(1/quota_i)   # rimuove overround
-    Poi addestri un secondo modello che impara quando il bookmaker
-    sbaglia (es. non vede le condizioni meteo).
+For LIVE bookmaker odds:
+    Use them as an ADDITIONAL feature, not as direct ground truth:
+      bookmaker_proba_p1 = (1/odds_p1) / sum(1/odds_i)   # removes overround
+    Then you train a second model that learns when the bookmaker is
+    wrong (e.g. it does not see weather conditions).
 
-NB: questo file è uno scheletro. Devi collegare la tua fonte di dati live
-(API o scraping) ai metodi marcati TODO.
+Note: this file is a skeleton. You must connect your own live data source
+(API or scraping) to the methods marked TODO.
 """
 
 from __future__ import annotations
@@ -42,22 +42,20 @@ from feature_engineering import FEATURE_COLUMNS
 from predict import predict_match
 
 
-# ---------------------------------------------------------------------------
-# 1) Catena di Markov per tennis (semplice, single-server)
-# ---------------------------------------------------------------------------
+# 1) Markov chain for tennis (simple, single-server)
 def prob_win_game_on_serve(p_point_on_serve: float) -> float:
     """
-    Probabilità di vincere il game al servizio dato p = P(vincere punto al servizio).
-    Formula chiusa per game a 4 punti (servizio standard tennis).
+    Probability of winning the service game given p = P(winning a point on serve).
+    Closed form for a 4-point game (standard tennis service game).
     """
     p, q = p_point_on_serve, 1 - p_point_on_serve
-    # Probabilità di vincere il game (incluso eventuale deuce)
+    # Probability of winning the game (including a possible deuce)
     win_no_deuce = (
         p**4
         + 4 * p**4 * q
         + 10 * p**4 * q**2
     )
-    # Deuce: P(arrivare a deuce) = C(6,3) * p^3 * q^3
+    # Deuce: P(reaching deuce) = C(6,3) * p^3 * q^3
     p_deuce = 20 * p**3 * q**3
     win_from_deuce = p**2 / (p**2 + q**2)
     return win_no_deuce + p_deuce * win_from_deuce
@@ -65,37 +63,35 @@ def prob_win_game_on_serve(p_point_on_serve: float) -> float:
 
 def prob_win_set(p_serve_a: float, p_serve_b: float) -> float:
     """
-    P(A vince un set) data p al servizio di A e di B. Modello semplificato:
-    simuliamo con probabilità di vincere il game al servizio.
-    Da p_serve_a deriviamo P(A vince game al suo servizio).
+    P(A wins a set) given p on serve for A and B. Simplified model:
+    we simulate using the probability of winning the service game.
+    From p_serve_a we derive P(A wins the game on his own serve).
     """
     pga = prob_win_game_on_serve(p_serve_a)
-    pgb = 1 - prob_win_game_on_serve(p_serve_b)  # A vince game alla risposta
-    # Approssimazione: P(A vince set) come funzione logistica di (pga - (1-pgb))
-    # Per un modello rigoroso useresti catena di Markov a 6+ stati di score.
+    pgb = 1 - prob_win_game_on_serve(p_serve_b)  # A wins the game on return
+    # Approximation: P(A wins set) as a logistic function of (pga - (1-pgb)).
+    # A rigorous model would use a Markov chain over 6+ score states.
     edge = (pga + pgb) / 2 - 0.5
-    return 1 / (1 + np.exp(-edge * 12))  # 12 è un fattore di scala empirico
+    return 1 / (1 + np.exp(-edge * 12))  # 12 is an empirical scaling factor
 
 
-# ---------------------------------------------------------------------------
-# 2) Stato live di un match
-# ---------------------------------------------------------------------------
+# 2) Live state of a match
 @dataclass
 class LiveTennisState:
-    """Stato corrente di una partita di tennis in corso."""
+    """Current state of an in-progress tennis match."""
     p1_name: str
     p2_name: str
     surface: str
     best_of: int = 3
     sets_p1: int = 0
     sets_p2: int = 0
-    games_p1: int = 0   # nel set corrente
+    games_p1: int = 0   # in the current set
     games_p2: int = 0
-    points_p1: int = 0  # nel game corrente
+    points_p1: int = 0  # in the current game
     points_p2: int = 0
     serving: int = 1    # 1 = p1, 2 = p2
-    # Statistiche live aggregate
-    p1_first_serve_in: float = 0.65   # default tipico ATP
+    # Aggregate live statistics
+    p1_first_serve_in: float = 0.65   # typical ATP default
     p1_first_serve_won: float = 0.72
     p1_second_serve_won: float = 0.52
     p2_first_serve_in: float = 0.65
@@ -115,11 +111,9 @@ class LiveTennisState:
         )
 
 
-# ---------------------------------------------------------------------------
-# 3) Predittore combinato
-# ---------------------------------------------------------------------------
+# 3) Combined predictor
 class LivePredictor:
-    """Combina predizione pre-match (XGBoost) + stato live (Markov + bookmaker)."""
+    """Combines pre-match prediction (XGBoost) + live state (Markov + bookmaker)."""
 
     def __init__(self):
         self.model = xgb.Booster()
@@ -130,23 +124,23 @@ class LivePredictor:
         return result["proba_p1_wins"]
 
     def predict_live_markov(self, state: LiveTennisState) -> float:
-        """Probabilità che p1 vinca dato lo stato attuale (Markov chain)."""
-        # Probabilità di vincere il prossimo set
+        """Probability that p1 wins given the current state (Markov chain)."""
+        # Probability of winning the next set
         p_set_p1 = prob_win_set(
             state.p1_point_win_on_own_serve(),
             state.p2_point_win_on_own_serve(),
         )
-        # Sets necessari per vincere il match
+        # Sets needed to win the match
         sets_to_win = (state.best_of // 2) + 1
-        # Quanti set deve ancora vincere p1?
+        # How many sets does p1 still need to win?
         remaining_p1 = sets_to_win - state.sets_p1
         remaining_p2 = sets_to_win - state.sets_p2
         if remaining_p1 <= 0:
             return 1.0
         if remaining_p2 <= 0:
             return 0.0
-        # Distribuzione binomiale negativa approssimata
-        # P(p1 vince) = somma sui modi in cui p1 raccoglie i set rimanenti
+        # Approximate negative binomial distribution
+        # P(p1 wins) = sum over the ways p1 collects the remaining sets
         from math import comb
         total = 0.0
         max_sets = remaining_p1 + remaining_p2 - 1
@@ -159,7 +153,7 @@ class LivePredictor:
 
     @staticmethod
     def odds_to_proba(odds_p1: float, odds_p2: float) -> float:
-        """Quote decimali -> probabilità implicita normalizzata (overround rimosso)."""
+        """Decimal odds -> normalized implied probability (overround removed)."""
         implicit_p1 = 1 / odds_p1
         implicit_p2 = 1 / odds_p2
         norm = implicit_p1 + implicit_p2
@@ -174,15 +168,15 @@ class LivePredictor:
         alpha_book: float = 0.4,
     ) -> float:
         """
-        Combina le tre fonti. I pesi devono sommare a 1; ribilanciamo
-        in base a ciò che è disponibile.
+        Combine the three sources. The weights must sum to 1; we rebalance
+        based on what is available.
         """
         components = [("model", p_model, 1.0 - alpha_live - alpha_book)]
         if p_live is not None:
             components.append(("live", p_live, alpha_live))
         if p_book is not None:
             components.append(("book", p_book, alpha_book))
-        # Rinormalizza i pesi (caso in cui alcune fonti mancano)
+        # Renormalize the weights (in case some sources are missing)
         total_w = sum(w for _, _, w in components)
         return sum(p * w for _, p, w in components) / total_w
 
@@ -208,31 +202,29 @@ class LivePredictor:
         }
 
 
-# ---------------------------------------------------------------------------
-# 4) TODO: collega la tua fonte di dati live
-# ---------------------------------------------------------------------------
+# 4) TODO: connect your own live data source
 def scrape_live_state(match_url: str) -> LiveTennisState:
     """
-    TODO: implementa lo scraping/API call per ottenere lo stato corrente.
+    TODO: implement the scraping/API call to obtain the current state.
 
-    Opzioni:
-      - The Odds API (https://the-odds-api.com)  per quote live
-      - Betfair Exchange API per dati di mercato
-      - Sofascore/Flashscore scraping per punteggi live (legalmente grigio)
-      - API ufficiale ATP (a pagamento, dati realtime)
+    Options:
+      - The Odds API (https://the-odds-api.com)  for live odds
+      - Betfair Exchange API for market data
+      - Sofascore/Flashscore scraping for live scores (legally gray)
+      - Official ATP API (paid, realtime data)
     """
-    raise NotImplementedError("Implementa lo scraping della tua fonte preferita.")
+    raise NotImplementedError("Implement the scraping for your preferred source.")
 
 
 if __name__ == "__main__":
-    # Esempio di utilizzo
+    # Usage example
     predictor = LivePredictor()
 
     # Pre-match
     pre = predictor.predict_pre_match("Jannik Sinner", "Carlos Alcaraz", "Hard", 5)
     print(f"Pre-match P(Sinner vince) = {pre:.4f}")
 
-    # In-play: Sinner ha vinto il primo set 6-4 e siamo 3-2 nel secondo
+    # In-play: Sinner won the first set 6-4 and it is 3-2 in the second
     state = LiveTennisState(
         p1_name="Jannik Sinner", p2_name="Carlos Alcaraz",
         surface="Hard", best_of=5,
@@ -242,7 +234,7 @@ if __name__ == "__main__":
     live = predictor.predict_live_markov(state)
     print(f"Live Markov P(Sinner vince) = {live:.4f}")
 
-    # Combinato (con quote bookmaker simulate)
+    # Combined (with simulated bookmaker odds)
     result = predictor.predict_full(
         "Jannik Sinner", "Carlos Alcaraz", "Hard", 5,
         live_state=state,

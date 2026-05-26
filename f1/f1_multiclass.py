@@ -1,7 +1,7 @@
 """
 F1 multi-class winner/podium/points/no-points + macro-F1.
-Confronto diretto con Pollub JCSI 2024 (macro-F1 0.778, acc 0.802).
-Stessa pipeline f1_podium: CatBoost decay + best-seed-on-val + temporal split.
+Direct comparison with Pollub JCSI 2024 (macro-F1 0.778, acc 0.802).
+Same pipeline as f1_podium: CatBoost decay + best-seed-on-val + temporal split.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def main():
     Xte, yte = te[cols].values, te["cls"].values
     w = np.exp(-(train_max - tr["season"].values) / 1.5)
 
-    # class weights bilanciati (inverso frequenza) per boost winner rara
+    # balanced class weights (inverse frequency) to boost the rare winner class
     cw = None
     if args.balanced:
         counts = np.bincount(ytr, minlength=NC)
@@ -104,7 +104,7 @@ def main():
              else ["winner", "points", "no-points"])
     print("\n" + classification_report(yte, pred_te, target_names=names,
                                         digits=3, zero_division=0))
-    # specificity per classe (metrica Pollub): TN/(TN+FP)
+    # per-class specificity (Pollub metric): TN/(TN+FP)
     cm = confusion_matrix(yte, pred_te, labels=list(range(NC)))
     tot = cm.sum()
     print("specificity per classe:")

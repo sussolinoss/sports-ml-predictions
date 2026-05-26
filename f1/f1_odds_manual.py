@@ -1,7 +1,7 @@
 """
-Manual quote loader: paste-quote da screenshot bookies, calcola edge + log.
+Manual odds loader: paste odds from bookmaker screenshots, compute edge + log.
 
-Uso:
+Usage:
   python -m f1_odds_manual --book sisal --date 2026-06-12 --quote-csv quotes.csv
   python -m f1_odds_manual --report
 """
@@ -20,7 +20,7 @@ from f1_data import PROCESSED_DIR
 
 LOG = PROCESSED_DIR / "f1_paper_bets.csv"
 
-# Mapping nome book → driverId Ergast (case-insensitive)
+# Mapping book name -> Ergast driverId (case-insensitive)
 NAME_MAP = {
     "antonelli": "antonelli", "kimi antonelli": "antonelli", "antonelli kimi": "antonelli",
     "russell": "russell", "russell george": "russell", "george russell": "russell",
@@ -40,7 +40,7 @@ NAME_MAP = {
 
 
 def model_predict():
-    """Predict P(vince) v2 calibrato: softmax cross-driver con T scaling."""
+    """Predict P(wins) v2 calibrated: cross-driver softmax with T scaling."""
     import joblib
     from catboost import CatBoostClassifier
     from f1_data import load_results
@@ -60,7 +60,7 @@ def model_predict():
     g = np.zeros(len(snap), dtype=int)
     p_cal = softmax_per_group(logit, g, T=T)
     snap["p_raw"] = p_cal
-    snap["p_norm"] = p_cal  # gia' normalizzata
+    snap["p_norm"] = p_cal  # already normalised
     return dict(zip(snap["driver"], zip(snap["p_raw"], snap["p_norm"]))), season, rnd
 
 
@@ -99,7 +99,7 @@ def cmd_add(book: str, date: str, quotes: dict[str, float], min_edge: float = 0.
                         "open" if edge_norm > min_edge else "no-bet", ""])
             if edge_norm > min_edge:
                 n_bet += 1
-    # margine bookie
+    # bookmaker margin
     tot_impl = sum(1 / o for o in quotes.values())
     print(f"\nMargine bookie: {(tot_impl - 1) * 100:+.1f}%  (overround)")
     print(f"Value-bet aperte (edge_norm > {min_edge*100:.0f}%): {n_bet}")

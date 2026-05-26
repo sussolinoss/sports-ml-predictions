@@ -1,4 +1,4 @@
-"""Ablation per paper: rimuovo gruppi feat + decay vs uniform. Singolo seed CPU."""
+"""Ablation for paper: remove feature groups + decay vs uniform. Single seed, CPU."""
 from __future__ import annotations
 
 import sys

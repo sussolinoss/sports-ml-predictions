@@ -1,21 +1,20 @@
 """
-Backtest scommesse pre-match: confronta la probabilita' del modello con le quote
-di chiusura del bookmaker (tennis-data.co.uk) e simula il ROI di una strategia
-value-betting su una finestra temporale (es. 1 mese).
+Pre-match betting backtest: compares the model's probability with the
+bookmaker's closing odds (tennis-data.co.uk) and simulates the ROI of a
+value-betting strategy over a time window (e.g. 1 month).
 
-Le quote sono usate SOLO come mercato contro cui scommettere, NON come feature
-del modello.
+Odds are used ONLY as a market to bet against, NOT as model features.
 
-Logica:
-  - per ogni match nella finestra, il modello indica il favorito (p>0.5) e la
-    sua probabilita'.
-  - si recupera la quota di quel giocatore dal file tennis-data (join sui due
-    nomi, ordine-indipendente, con tolleranza sulla data).
-  - VALUE BET se  model_proba * quota > 1 + margine.
-  - stake: flat 1 unita' (default) oppure Kelly frazionario (--kelly).
-  - payout: +(quota-1)*stake se il giocatore puntato vince, -stake altrimenti.
+Logic:
+  - for each match in the window, the model indicates the favorite (p>0.5) and
+    its probability.
+  - the odds for that player are retrieved from the tennis-data file (join on
+    the two names, order-independent, with a date tolerance).
+  - VALUE BET if  model_proba * odd > 1 + margin.
+  - stake: flat 1 unit (default) or fractional Kelly (--kelly).
+  - payout: +(odd-1)*stake if the backed player wins, -stake otherwise.
 
-USO:
+USAGE:
     python -m backtest --start 2024-09-01 --end 2024-09-30
     python -m backtest --start 2024-09-01 --end 2024-09-30 --margin 0.05 --kelly 0.25
 """
@@ -37,13 +36,13 @@ from odds_loader import build_pair_index, load_odds, sackmann_name_to_key
 
 DATE_TOLERANCE_DAYS = 14
 
-# Inverso di LEVEL_ORDER in feature_engineering (level_enc -> etichetta leggibile)
+# Inverse of LEVEL_ORDER in feature_engineering (level_enc -> readable label)
 LEVEL_LABELS = {0: "Davis", 1: "Challenger", 2: "Satellite", 3: "ATP250/500",
                 4: "Finals", 5: "Masters1000", 6: "GrandSlam"}
 
 
 def _id_to_name() -> dict[int, str]:
-    """id -> nome Sackmann (inverte name_to_id.pkl)."""
+    """id -> Sackmann name (inverts name_to_id.pkl)."""
     name_map = joblib.load(PROCESSED_DIR / "name_to_id.pkl")
     id2name: dict[int, str] = {}
     for name, pid in name_map.items():
@@ -52,7 +51,7 @@ def _id_to_name() -> dict[int, str]:
 
 
 def _match_odds(pair_index: dict, key_a: str, key_b: str, when: pd.Timestamp):
-    """Trova la riga quote per la coppia, quella con data piu' vicina entro tolleranza."""
+    """Find the odds row for the pair, the one with the closest date within tolerance."""
     rows = pair_index.get(frozenset((key_a, key_b)))
     if not rows:
         return None
@@ -70,8 +69,8 @@ def bets_from_predictions(fwd: pd.DataFrame, pair_index: dict, id2name: dict,
                           min_edge: float = 0.0, max_fav_rank: float = float("inf"),
                           min_fav_rank: float = 0.0, min_prob: float = 0.0,
                           levels: set | None = None, surfaces: set | None = None):
-    """Cuore del betting: da predizioni (schema forward_test) + indice quote a lista bet.
-    Riusato da run_backtest e dalla walk-forward. Ritorna (bets, n_with_odds, unmatched)."""
+    """Betting core: from predictions (forward_test schema) + odds index to a bet list.
+    Reused by run_backtest and the walk-forward. Returns (bets, n_with_odds, unmatched)."""
     n_with_odds = 0
     unmatched = []
     bets = []
@@ -90,14 +89,14 @@ def bets_from_predictions(fwd: pd.DataFrame, pair_index: dict, id2name: dict,
 
         favored_is_p1 = r.p1_proba > 0.5
         model_proba = r.p1_proba if favored_is_p1 else 1 - r.p1_proba
-        # Filtro "scommesse sicure": solo dove il modello e' molto confidente
+        # "Safe bets" filter: only where the model is very confident
         if model_proba < min_prob:
             continue
         fav_key = k1 if favored_is_p1 else k2
         fav_rank = r.p1_rank if favored_is_p1 else r.p2_rank
         fav_played = r.p1_matches_played if favored_is_p1 else r.p2_matches_played
 
-        # Filtro per banda di ranking del favorito (strutturale, non per-nome)
+        # Filter by the favorite's ranking band (structural, not per-name)
         if min_fav_rank > 0 or max_fav_rank != float("inf"):
             if pd.isna(fav_rank) or fav_rank < min_fav_rank or fav_rank > max_fav_rank:
                 continue
@@ -153,7 +152,7 @@ def run_backtest(start: str, end: str, margin: float = 0.0, kelly: float = 0.0,
                  min_fav_rank: float = 0.0, min_prob: float = 0.0,
                  levels: set | None = None, surfaces: set | None = None,
                  book: str | None = None, debug: bool = False) -> pd.DataFrame:
-    """Restituisce un DataFrame con una riga per ogni value bet piazzata."""
+    """Return a DataFrame with one row per placed value bet."""
     fwd = forward_test(start, end)
     id2name = _id_to_name()
     pair_index = build_pair_index(load_odds(start, end, book=book))
@@ -173,7 +172,7 @@ def run_backtest(start: str, end: str, margin: float = 0.0, kelly: float = 0.0,
 
 
 def bootstrap_roi(bets_df: pd.DataFrame, n_boot: int = 10000, seed: int = 42) -> dict:
-    """Intervallo di confidenza 95% sul ROI via bootstrap (resampling con rimpiazzo)."""
+    """95% confidence interval on ROI via bootstrap (resampling with replacement)."""
     profit = bets_df["profit"].to_numpy()
     stake = bets_df["stake"].to_numpy()
     n = len(profit)
@@ -204,7 +203,7 @@ def summarize(bets_df: pd.DataFrame, n_boot: int = 0) -> None:
     print(f"Match con quota agganciata:  {n_with_odds}  (copertura {cov:.1f}%)")
     print(f"Accuracy modello (tutti i match): {model_acc:.4f}")
 
-    # Debug: coppie non agganciate (challenger/quali strutturali vs nomi non matchati)
+    # Debug: unmatched pairs (structural challenger/quali vs unmatched names)
     unmatched = bets_df.attrs.get("unmatched", [])
     if bets_df.attrs.get("debug") and unmatched:
         from collections import Counter
@@ -330,7 +329,7 @@ def main():
     surfaces = set(s.strip() for s in args.surface.split(",")) if args.surface else None
 
     if args.sweep:
-        # Stessa selezione base (livello/superficie/quota/book), edge=0, poi filtra in memoria
+        # Same base selection (level/surface/odd/book), edge=0, then filter in memory
         base = run_backtest(args.start, args.end, margin=0.0, kelly=args.kelly,
                             min_odd=args.min_odd, max_odd=args.max_odd, min_edge=-1.0,
                             max_fav_rank=args.max_fav_rank, min_fav_rank=args.min_fav_rank,

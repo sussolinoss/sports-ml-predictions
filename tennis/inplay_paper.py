@@ -1,21 +1,21 @@
 """
-In-play value detector in PAPER-TRADING (zero soldi).
+In-play value detector in PAPER-TRADING (no real money).
 
-Idea: durante un match, il motore Markov (live_markov) calcola la probabilita' VERA
-di vittoria dato il punteggio corrente e la forza al servizio dei due giocatori.
-La si confronta con la quota LIVE di Betfair: se prob_vera > 1/quota + soglia ->
-value bet -> logga (stake finto) su data/inplay_paper.csv.
+Idea: during a match, the Markov engine (live_markov) computes the TRUE win
+probability given the current score and the serve strength of the two players.
+It is compared to the LIVE Betfair odds: if true_prob > 1/odds + threshold ->
+value bet -> log (fake stake) to data/inplay_paper.csv.
 
-Forza al servizio (p_serve) = 'serve_pts_won' dalle stat rolling del modello
-(final_state.pkl). Probabilita' vera live = live_markov.match_win_prob.
+Serve strength (p_serve) = 'serve_pts_won' from the model's rolling stats
+(final_state.pkl). Live true probability = live_markov.match_win_prob.
 
-MODI:
-  --sim         simula un match punto-punto con quote sintetiche (momentum mispricing)
-                e mostra l'intero ciclo: detect -> bet -> settle -> P/L. Nessuna API.
-  (default)     live: legge le quote da Betfair, chiede il punteggio corrente a video,
-                logga le value bet. (Settlement manuale dopo.)
+MODES:
+  --sim         simulate a match point-by-point with synthetic odds (momentum mispricing)
+                and show the whole cycle: detect -> bet -> settle -> P/L. No API.
+  (default)     live: read the odds from Betfair, ask for the current score on screen,
+                log the value bets. (Settlement is manual afterwards.)
 
-USO:
+USAGE:
     python -m inplay_paper --sim --p1 "Jannik Sinner" --p2 "Daniil Medvedev" --surface Hard --best_of 3
     python -m inplay_paper --market 1.234567890 --p1 "..." --p2 "..."   # live Betfair
 """
@@ -37,9 +37,7 @@ from live_markov import match_win_prob
 PAPER_LOG = TOUR_DIR / "inplay_paper.csv"
 
 
-# ---------------------------------------------------------------------------
-# Forza al servizio dei due giocatori dal modello
-# ---------------------------------------------------------------------------
+# Serve strength of the two players from the model
 def p_serve_for(p1_name: str, p2_name: str) -> tuple[float, float]:
     import joblib
     from predict import _find_player_id
@@ -52,9 +50,7 @@ def p_serve_for(p1_name: str, p2_name: str) -> tuple[float, float]:
     return float(pa), float(pb)
 
 
-# ---------------------------------------------------------------------------
-# Logica value + log
-# ---------------------------------------------------------------------------
+# Value logic + log
 def _log_paper(row: dict):
     PAPER_LOG.parent.mkdir(parents=True, exist_ok=True)
     new = not PAPER_LOG.exists()
@@ -66,7 +62,7 @@ def _log_paper(row: dict):
 
 
 def value_bets(pa, pb, best_of, state, odd_a, odd_b, min_edge):
-    """Ritorna lista di (lato, true_prob, odd, edge) dove c'e' value."""
+    """Return a list of (side, true_prob, odd, edge) where there is value."""
     sa, sb, ga, gb, srv_a, pi, pj = state
     true_a = match_win_prob(pa, pb, best_of, sets_a=sa, sets_b=sb, ga=ga, gb=gb,
                             a_serving=srv_a, pi=pi, pj=pj)
@@ -79,9 +75,7 @@ def value_bets(pa, pb, best_of, state, odd_a, odd_b, min_edge):
     return out
 
 
-# ---------------------------------------------------------------------------
-# Simulatore (paper, self-contained)
-# ---------------------------------------------------------------------------
+# Simulator (paper, self-contained)
 def _play_point(p):
     return random.random() < p
 
@@ -96,13 +90,13 @@ def simulate(pa, pb, best_of, p1, p2, min_edge=0.03, margin=0.05, seed=None):
 
     while sa < need and sb < need:
         ga = gb = 0
-        srv_a = (sa + sb) % 2 == 0  # alterna chi inizia a servire il set
+        srv_a = (sa + sb) % 2 == 0  # alternate who starts serving the set
         while not ((ga >= 6 or gb >= 6) and abs(ga - gb) >= 2) and not (ga == 7 or gb == 7):
-            # stato pre-game: calcola true prob e quota sintetica di mercato
+            # pre-game state: compute true prob and synthetic market odds
             state = (sa, sb, ga, gb, srv_a, 0, 0)
             true_a = match_win_prob(pa, pb, best_of, sets_a=sa, sets_b=sb, ga=ga, gb=gb,
                                     a_serving=srv_a)
-            # mercato = true con margine + rumore di momentum (a volte sbaglia)
+            # market = true with margin + momentum noise (sometimes wrong)
             noise = random.uniform(-0.06, 0.06)
             mkt_a = min(0.98, max(0.02, true_a + noise))
             odd_a = round(1.0 / (mkt_a * (1 + margin)), 2)
@@ -110,7 +104,7 @@ def simulate(pa, pb, best_of, p1, p2, min_edge=0.03, margin=0.05, seed=None):
             for side, tp, odd, edge in value_bets(pa, pb, best_of, state, odd_a, odd_b, min_edge):
                 open_bets.append({"side": side, "odd": odd, "edge": edge,
                                   "score": f"{sa}-{sb} {ga}-{gb}"})
-            # gioca il game (server vince ogni punto con la sua p)
+            # play the game (server wins each point with his p)
             p_srv = pa if srv_a else pb
             a_pts = b_pts = 0
             while not ((a_pts >= 4 or b_pts >= 4) and abs(a_pts - b_pts) >= 2):
@@ -155,9 +149,7 @@ def simulate(pa, pb, best_of, p1, p2, min_edge=0.03, margin=0.05, seed=None):
           "Serve solo a mostrare il ciclo.")
 
 
-# ---------------------------------------------------------------------------
-# Live Betfair (odds reali, punteggio inserito a mano, log paper)
-# ---------------------------------------------------------------------------
+# Live Betfair (real odds, score entered by hand, paper log)
 def live(market_id, pa, pb, best_of, p1, p2, min_edge=0.03, poll=20):
     from betfair_client import BetfairClient
     bf = BetfairClient(); bf.login()
@@ -167,7 +159,7 @@ def live(market_id, pa, pb, best_of, p1, p2, min_edge=0.03, poll=20):
         for m in bf.list_inplay_tennis():
             print(f"  {m['market_id']}  {m['event']}  {[r['name'] for r in m['runners']]}")
         return
-    runners = cat["runners"]  # [0]=A, [1]=B (ordine Betfair)
+    runners = cat["runners"]  # [0]=A, [1]=B (Betfair order)
     print(f"Live: {cat['event']} | {p1} (p_serve {pa:.3f}) vs {p2} ({pb:.3f})")
     print("A ogni poll inserisci il punteggio. Ctrl-C per uscire.\n")
     try:

@@ -1,8 +1,8 @@
 """
-Random search hyperparameter sull'XGBoost del podio F1. Scoring = val precision@3
-(la metrica che ci interessa davvero, non log-loss).
+Random search over hyperparameters for the F1 podium XGBoost. Scoring = val precision@3
+(the metric we actually care about, not log-loss).
 
-Uso:  python -m f1_tune --trials 100 --test 2025
+Usage:  python -m f1_tune --trials 100 --test 2025
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def tune(trials=100, test_y=2025):
               f"d={p['max_depth']} lr={p['learning_rate']:.2f} it={m.best_iteration}"
               f"  [{_t.time()-t0:.0f}s]{flag}", flush=True)
 
-    # Retrain finale col best (su train; val = early stop)
+    # Final retrain with the best params (on train; val = early stop)
     pb = best["p"]
     final = xgb.train(pb, dtr, num_boost_round=1500, evals=[(dva, "v")],
                       early_stopping_rounds=50, verbose_eval=False)
@@ -109,7 +109,7 @@ def tune(trials=100, test_y=2025):
           f"AUC {roc_auc_score(te.podium, te.p):.4f}")
     print(f"  (prima del tuning era 0.806)")
 
-    # Salva
+    # Save
     final.save_model(str(PROCESSED_DIR / "f1_podium_tuned.json"))
     joblib.dump(cal, PROCESSED_DIR / "f1_calibrator_tuned.pkl")
     (PROCESSED_DIR / "f1_best_params.json").write_text(json.dumps(pb, indent=2, default=str))

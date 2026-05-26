@@ -1,6 +1,6 @@
 """
-Time-decay sample weights: gare recenti pesano di piu'.
-Tau in stagioni. Test multipli tau. + XGBoost classifier head sanity.
+Time-decay sample weights: recent races weigh more.
+Tau in seasons. Tests multiple tau values. + XGBoost classifier head sanity check.
 """
 from __future__ import annotations
 

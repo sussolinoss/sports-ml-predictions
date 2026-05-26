@@ -1,13 +1,13 @@
 """
-Predizione P(podio) per una gara, usando SOLO informazione pre-gara:
-  - feature rolling dalle gare passate (forma, podium rate, affidabilita', track)
-  - griglia + gap qualifica del round (note dopo le qualifiche del sabato)
+Predict P(podium) for a race using ONLY pre-race information:
+  - rolling features from past races (form, podium rate, reliability, track)
+  - grid + qualifying gap for the round (known after Saturday qualifying)
 
-Funziona sia per un round gia' corso (demo) sia per uno FUTURO ma con qualifiche
-gia' disputate (inietta l'entry list dalle qualifiche). Usa il modello salvato da
+Works both for a round already run (demo) and for a FUTURE one whose qualifying
+has already been held (injects the entry list from qualifying). Uses the model saved by
 `python -m f1_podium` (f1_podium.json + f1_calibrator.pkl).
 
-Uso:
+Usage:
     python -m f1_predict --year 2026 --round 9
 """
 
@@ -29,13 +29,13 @@ from f1_data import PROCESSED_DIR, fetch_round_quali, load_results
 
 
 def _inject_future_round(df: pd.DataFrame, year: int, rnd: int) -> pd.DataFrame:
-    """Se il round non e' nei risultati, aggiunge le righe dalla qualifica (entry+griglia)."""
+    """If the round is not in the results, add rows from qualifying (entry+grid)."""
     q = fetch_round_quali(year, rnd)
     if not q:
         raise RuntimeError(f"Qualifiche {year} round {rnd} non disponibili.")
     best = [r["best_ms"] for r in q["rows"] if r["best_ms"]]
     pole = min(best) if best else None
-    # gap dal compagno
+    # gap to teammate
     by_team: dict[str, list] = {}
     for r in q["rows"]:
         if r["best_ms"]:
@@ -64,7 +64,7 @@ def predict_race(year: int, rnd: int):
     df = df.sort_values(["date", "round"]).reset_index(drop=True)
 
     feat = F.build_features(df)
-    # p_tcn = media di N TCN seed (riduce varianza); fallback a f1_tcn.pt singolo
+    # p_tcn = mean of N TCN seeds (reduces variance); fallback to single f1_tcn.pt
     cols = F.FEATURE_COLS[:]
     tcn_seeds = sorted(PROCESSED_DIR.glob("f1_tcn_seed*.pt"))
     fallback = PROCESSED_DIR / "f1_tcn.pt"
@@ -80,7 +80,7 @@ def predict_race(year: int, rnd: int):
     if len(sel) == 0:
         raise RuntimeError("Nessuna riga per quel round.")
 
-    # produzione = CatBoost (f1_podium.cbm); fallback XGB se solo .json esiste
+    # production = CatBoost (f1_podium.cbm); fallback to XGB if only .json exists
     cbm_path = PROCESSED_DIR / "f1_podium.cbm"
     xgb_path = PROCESSED_DIR / "f1_podium.json"
     if cbm_path.exists():

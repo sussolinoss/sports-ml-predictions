@@ -1,6 +1,6 @@
 """
-Loader PitStops-main: tempo stazionario (in pista, ~2-3s) per gara/team/pilota.
-Diverso da Ergast pitstops (in-lane ~25s) — misura pura velocita' del pit crew.
+PitStops-main loader: stationary time (in the box, ~2-3s) per race/team/driver.
+Different from Ergast pitstops (in-lane ~25s) — measures pure pit crew speed.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pandas as pd
 BASE = Path(__file__).resolve().parent / "data" / "f1" / "raw" / "pitstop" / \
        "unzipped" / "PitStops-main" / "PitStops-main"
 
-# cognome -> Ergast driverId per piloti 2018-2026
+# surname -> Ergast driverId for 2018-2026 drivers
 SURNAME_TO_ID = {
     "Verstappen": "max_verstappen", "Hamilton": "hamilton", "Russell": "russell",
     "Leclerc": "leclerc", "Sainz": "sainz", "Norris": "norris", "Piastri": "piastri",
@@ -31,7 +31,7 @@ SURNAME_TO_ID = {
 
 
 def load_pitstops_main() -> pd.DataFrame:
-    """[season, race, driver, pit_min_s, pit_avg_s, pit_n] per pilota/gara."""
+    """[season, race, driver, pit_min_s, pit_avg_s, pit_n] per driver/race."""
     if not BASE.exists():
         return pd.DataFrame(columns=["season", "race", "driver",
                                      "pit_min_s", "pit_avg_s", "pit_n"])

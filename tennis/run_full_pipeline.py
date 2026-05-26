@@ -1,13 +1,13 @@
 """
-Pipeline completa end-to-end.
+Full end-to-end pipeline.
 
-Esegue in sequenza:
-  1) Download dati Sackmann (cached, salta se già scaricati)
-  2) Feature engineering anti-leakage
-  3) Training XGBoost con split temporale
-  4) Forward test su ultimo mese disponibile
+Runs in sequence:
+  1) Download Sackmann data (cached, skipped if already downloaded)
+  2) Anti-leakage feature engineering
+  3) XGBoost training with a temporal split
+  4) Forward test on the last available month
 
-Uso:
+Usage:
     python run_full_pipeline.py
 """
 

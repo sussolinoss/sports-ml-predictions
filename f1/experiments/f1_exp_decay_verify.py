@@ -1,4 +1,4 @@
-"""Verifica decay tau=1.5 su 10 seed diversi (no fluke check)."""
+"""Verify decay tau=1.5 across 10 different seeds (no-fluke check)."""
 from __future__ import annotations
 
 import sys

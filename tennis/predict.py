@@ -1,13 +1,13 @@
 """
-Predizione pre-match singola.
+Single pre-match prediction.
 
-Esempio:
+Example:
     python -m src.predict --p1 "Jannik Sinner" --p2 "Carlos Alcaraz" \
         --surface Hard --best_of 5
 
-Usa lo stato salvato da feature_engineering (final_state.pkl) per ottenere
-ELO, forma recente, H2H aggiornati all'ultima partita nei dati.
-Per rank/punti/età usa l'ultimo valore osservato per ogni giocatore.
+Uses the state saved by feature_engineering (final_state.pkl) to get ELO,
+recent form and H2H updated to the last match in the data.
+For rank/points/age it uses the last observed value for each player.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from feature_engineering import (
 
 
 def _last_known(features_df: pd.DataFrame, player_id: int) -> dict:
-    """Ultimo valore osservato di rank/age/altezza/hand per il giocatore."""
+    """Last observed value of rank/age/height/hand for the player."""
     p1_rows = features_df[features_df["p1_id"] == player_id].assign(side=1)
     p2_rows = features_df[features_df["p2_id"] == player_id].assign(side=2)
     if len(p1_rows) == 0 and len(p2_rows) == 0:
@@ -56,11 +56,11 @@ def _last_known(features_df: pd.DataFrame, player_id: int) -> dict:
 def _find_player_id(name: str, name_map: dict) -> int:
     if name in name_map:
         return name_map[name]
-    # Fuzzy: cerca case-insensitive
+    # Fuzzy: case-insensitive search
     lower_map = {k.lower(): v for k, v in name_map.items()}
     if name.lower() in lower_map:
         return lower_map[name.lower()]
-    # Match parziale
+    # Partial match
     matches = [k for k in name_map if name.lower() in k.lower()]
     if len(matches) == 1:
         print(f"  (match parziale: '{name}' -> '{matches[0]}')")
@@ -78,7 +78,7 @@ def predict_match(
     round_label: str = "R32",
     level: str = "A",
 ) -> dict:
-    # Carica risorse
+    # Load resources
     model = xgb.Booster()
     model.load_model(str(MODEL_PATH))
     name_map = joblib.load(PROCESSED_DIR / "name_to_id.pkl")
@@ -88,7 +88,7 @@ def predict_match(
     p1_id = _find_player_id(p1_name, name_map)
     p2_id = _find_player_id(p2_name, name_map)
 
-    # Feature dallo stato
+    # Features from state
     p1_elo = state.elo.get_general(p1_id)
     p2_elo = state.elo.get_general(p2_id)
     p1_selo = state.elo.get_surface(p1_id, surface)
@@ -105,7 +105,7 @@ def predict_match(
     p1_info = _last_known(features_df, p1_id)
     p2_info = _last_known(features_df, p2_id)
 
-    # Stima fatigue come 0 (non sappiamo cosa giocheranno tra ora e il match)
+    # Estimate fatigue as 0 (we don't know what they'll play between now and the match)
     p1_fatigue = 0
     p2_fatigue = 0
 
@@ -129,7 +129,7 @@ def predict_match(
         "surface_Grass": int(surface == "Grass"),
         "surface_Carpet": int(surface == "Carpet"),
     }
-    # Differenze
+    # Differences
     row["elo_diff"] = row["p1_elo"] - row["p2_elo"]
     row["surface_elo_diff"] = row["p1_surface_elo"] - row["p2_surface_elo"]
     row["form_diff"] = row["p1_form"] - row["p2_form"]
@@ -142,20 +142,20 @@ def predict_match(
     row["ht_diff"] = (row["p1_ht"] or 0) - (row["p2_ht"] or 0)
     row["hand_diff"] = row["p1_hand"] - row["p2_hand"]
 
-    # Stat servizio/risposta rolling
+    # Rolling serve/return stats
     for m in SERVE_METRICS:
         row[f"p1_{m}"] = p1_ss[m]
         row[f"p2_{m}"] = p2_ss[m]
         row[f"{m}_diff"] = p1_ss[m] - p2_ss[m]
 
-    # Closing odds non note pre-match per una partita futura -> NaN (gestito da XGBoost)
+    # Closing odds unknown pre-match for a future game -> NaN (handled by XGBoost)
     row["book_proba_p1"] = np.nan
 
     X = pd.DataFrame([row])[FEATURE_COLUMNS]
     dmat = xgb.DMatrix(X, feature_names=FEATURE_COLUMNS)
     proba_p1 = float(model.predict(dmat)[0])
 
-    # Calibrazione isotonica se disponibile (prob affidabili per l'edge)
+    # Isotonic calibration if available (reliable probabilities for the edge)
     cal_path = PROCESSED_DIR / "calibrator.pkl"
     if cal_path.exists():
         proba_p1 = float(joblib.load(cal_path).predict([proba_p1])[0])

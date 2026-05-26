@@ -1,6 +1,6 @@
 """
-Core TCN riusabile (modello, sequenze, train, save/load).
-Importato da f1_podium (training+save), f1_predict (load), f1_tcn (eval).
+Reusable TCN core (model, sequences, train, save/load).
+Imported by f1_podium (training+save), f1_predict (load), f1_tcn (eval).
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ DEVICE = torch.device("cuda" if (torch.cuda.is_available() and
 
 
 def build_sequences(df: pd.DataFrame):
-    """Per ogni riga: sequenza (K, CH) delle ultime K gare del pilota (anti-leakage).
-    Canali: [pos/20, podio, dnf, punti/25]."""
+    """For each row: the (K, CH) sequence of the driver's last K races (anti-leakage).
+    Channels: [pos/20, podium, dnf, points/25]."""
     state = defaultdict(lambda: deque(maxlen=K))
     seqs = np.zeros((len(df), K, CH), dtype=np.float32)
     y = np.zeros(len(df), dtype=np.float32)

@@ -1,6 +1,6 @@
 """
-Modello P(vince campionato) e P(top-3 standings) mid-season rolling.
-Feat avanzate: H2H vs leader, momentum, defending_champ, mid-season conversion historical.
+Mid-season rolling model for P(wins championship) and P(top-3 standings).
+Advanced features: H2H vs leader, momentum, defending_champ, historical mid-season conversion.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from f1_data import PROCESSED_DIR, load_results
 
 def build_champ_dataset(df: pd.DataFrame, min_round: int = 3,
                         target: str = "champ") -> pd.DataFrame:
-    """target: 'champ' (top-1) o 'top3' (top-3 standings finali)."""
+    """target: 'champ' (top-1) or 'top3' (top-3 final standings)."""
     df = df.sort_values(["season", "round", "driver"]).reset_index(drop=True)
     df["pts_after"] = df.groupby(["season", "driver"])["points"].cumsum()
     df["con_pts_after"] = df.groupby(["season", "constructor"])["points"].cumsum()
@@ -29,16 +29,16 @@ def build_champ_dataset(df: pd.DataFrame, min_round: int = 3,
     df["dnf_event"] = (~df["finished"].astype(bool)).astype(int)
     df["dnf_after"] = df.groupby(["season", "driver"])["dnf_event"].cumsum()
 
-    # total_rounds: max round osservato; per stagione CORRENTE (ultima) se <18
-    # significa in corso → uso stima 24 (calendario F1 2024+).
+    # total_rounds: max observed round; for the CURRENT (last) season, <18
+    # means it is ongoing, so use an estimate of 24 (F1 2024+ calendar).
     total_rounds = df.groupby("season")["round"].max().rename("total_rounds")
     current_season = int(df["season"].max())
     if total_rounds.loc[current_season] < 18:
-        total_rounds.loc[current_season] = 24  # stima calendario in corso
+        total_rounds.loc[current_season] = 24  # estimate for the ongoing calendar
     df = df.merge(total_rounds, on="season")
     last_state = df[df["round"] == df["total_rounds"]] \
         .groupby(["season", "driver"])["pts_after"].max().reset_index()
-    # champion(top1) e top-3 finali per season
+    # champion (top1) and final top-3 per season
     last_state = last_state.sort_values(["season", "pts_after"], ascending=[True, False])
     champs = last_state.groupby("season").head(1)[["season", "driver"]].assign(is_champ=1)
     top3 = last_state.groupby("season").head(3)[["season", "driver"]].assign(is_top3=1)
@@ -46,22 +46,22 @@ def build_champ_dataset(df: pd.DataFrame, min_round: int = 3,
            .merge(top3, on=["season", "driver"], how="left")
     df["is_champ"] = df["is_champ"].fillna(0).astype(int)
     df["is_top3"] = df["is_top3"].fillna(0).astype(int)
-    # defending champ: driver e' campione della stagione precedente
+    # defending champ: driver was champion in the previous season
     champs_prev = champs.assign(season=champs.season + 1, is_def_champ=1) \
                         .drop(columns="is_champ").rename(columns={"season": "season"})
     df = df.merge(champs_prev, on=["season", "driver"], how="left")
     df["is_def_champ"] = df["is_def_champ"].fillna(0).astype(int)
 
-    # H2H pos vs leader: avg(pos_driver - pos_leader_when_both_finish) ultime 5 gare
-    # momentum_3: punti ultime 3 gare / 75 (max teorici 3 gare * 25)
-    # mid-season conversion historical: dato leader dopo round N, P(vince) — calcolata su train
+    # H2H pos vs leader: avg(pos_driver - pos_leader_when_both_finish) over the last 5 races
+    # momentum_3: points over the last 3 races / 75 (theoretical max 3 races * 25)
+    # historical mid-season conversion: given leader after round N, P(wins) — computed on train
 
     rows = []
     for (season, rnd), g in df.groupby(["season", "round"], sort=True):
         if rnd < min_round:
             continue
         tot = int(g["total_rounds"].iloc[0])
-        # leader pts attuale across tutti i driver entrati in stagione
+        # current leader pts across all drivers that have entered the season
         sea = df[(df.season == season) & (df["round"] <= rnd)]
         cur_pts = sea.groupby("driver", as_index=False)["pts_after"].max() \
                      .rename(columns={"pts_after": "pts_now"})
@@ -85,11 +85,11 @@ def build_champ_dataset(df: pd.DataFrame, min_round: int = 3,
         snap["max_pts_remaining"] = snap["rounds_remaining"] * 25
         snap["mathematically_possible"] = (snap["pts_now"] + snap["max_pts_remaining"]
                                            >= leader_pts).astype(int)
-        # momentum_3: punti ultime 3 gare (round_N-2..N) per driver
+        # momentum_3: points over the last 3 races (round_N-2..N) per driver
         last3 = df[(df.season == season) & (df["round"] >= rnd - 2)
                    & (df["round"] <= rnd)].groupby("driver")["points"].sum()
         snap["momentum_3"] = snap["driver"].map(last3).fillna(0) / 75.0
-        # H2H vs leader: media (pos_driver - pos_leader) ultime 5 gare entrambi finished
+        # H2H vs leader: mean (pos_driver - pos_leader) over the last 5 races both finished
         h5 = df[(df.season == season) & (df["round"] >= rnd - 4) & (df["round"] <= rnd)]
         lead_pos = h5[h5["driver"] == leader_drv].set_index("round")["position"]
         h2h_vals = {}

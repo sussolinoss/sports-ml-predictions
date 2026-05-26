@@ -1,20 +1,20 @@
 """
-Passo gara e degrado gomme da FastF1 (giri delle gare, 2018+).
+Race pace and tyre degradation from FastF1 (race laps, 2018+).
 
-Per ogni gara estrae, per pilota:
-  - pace_gap: mediana dei giri "puliti" - mediana del piu' veloce (secondi di
-    distacco nel PASSO GARA, non sul giro singolo come la qualifica).
-  - deg: degrado gomme = pendenza media (LapTime vs TyreLife) dentro gli stint
-    (sec/giro; piu' alto = consuma di piu').
+For each race, per driver, it extracts:
+  - pace_gap: median of "clean" laps - median of the fastest (seconds of
+    gap in RACE PACE, not on a single lap as in qualifying).
+  - deg: tyre degradation = mean slope (LapTime vs TyreLife) within stints
+    (sec/lap; higher = wears more).
 
-Questi sono dati di GARA -> usabili SOLO come feature ROLLING dalle gare PASSATE
-(vedi build_features in f1_podium): cosi' restano anti-leakage. Misurano un tratto
-(passo lungo, gestione gomme) che la qualifica non cattura.
+These are RACE data -> usable ONLY as ROLLING features from PAST races
+(see build_features in f1_podium): that way they stay anti-leakage. They measure a trait
+(long-run pace, tyre management) that qualifying does not capture.
 
-Join FastF1 -> Ergast: FastF1 results ha la colonna 'DriverId' (= driverId Ergast).
+Join FastF1 -> Ergast: FastF1 results has a 'DriverId' column (= Ergast driverId).
 
-Richiede:  pip install fastf1
-Uso:       python -m fastf1_pace        # LENTO la prima volta (carica i giri di ~190 gare)
+Requires:  pip install fastf1
+Usage:     python -m fastf1_pace        # SLOW the first time (loads laps for ~190 races)
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ FIRST_SEASON = 2018
 
 
 def _race_pace(year: int, rnd: int) -> dict | None:
-    """{driverId: {'pace_gap': s, 'deg': s/giro}} per la gara. None se non disponibile."""
+    """{driverId: {'pace_gap': s, 'deg': s/lap}} for the race. None if unavailable."""
     import fastf1
     try:
         fastf1.set_log_level("ERROR")
@@ -57,7 +57,7 @@ def _race_pace(year: int, rnd: int) -> dict | None:
             did = abbr2id.get(abbr)
             if not did:
                 continue
-            # degrado: pendenza media LapTime vs TyreLife per stint
+            # degradation: mean slope LapTime vs TyreLife per stint
             slopes = []
             if "Stint" in g and "TyreLife" in g:
                 for _, gs in g.groupby("Stint"):
@@ -70,7 +70,7 @@ def _race_pace(year: int, rnd: int) -> dict | None:
         return out
     except Exception as e:  # noqa: BLE001
         if "RateLimit" in type(e).__name__:
-            raise  # gestito dal loop di build_pace (stop con grazia)
+            raise  # handled by the build_pace loop (graceful stop)
         return None
 
 
@@ -96,7 +96,7 @@ def build_pace(years, max_round: int = 24, overwrite: bool = False) -> dict:
                 continue
             data[key] = r
             print(f"  {key}: {len(r)} piloti")
-            PACE_FILE.write_text(json.dumps(data))  # salva incrementale
+            PACE_FILE.write_text(json.dumps(data))  # save incrementally
     return data
 
 

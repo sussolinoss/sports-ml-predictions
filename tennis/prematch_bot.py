@@ -1,23 +1,23 @@
 """
-Bot pre-match in PAPER-TRADING (zero soldi).
+Pre-match bot in PAPER-TRADING mode (no real money).
 
-Per ogni match di tennis in arrivo (The Odds API):
-  1. il modello calcola la prob calibrata del vincitore
-  2. edge = prob - 1/quota; se edge > soglia -> value bet
-  3. stake "sicuro" = Kelly frazionario (default 1/4) con cap sul bankroll
-  4. manda su Telegram: chi vs chi, pronostico, quota+edge, stake, countdown, link
-  5. logga tutto in data/prematch_paper.csv (stake finti)
+For each upcoming tennis match (The Odds API):
+  1. the model computes the calibrated probability of the winner
+  2. edge = prob - 1/odd; if edge > threshold -> value bet
+  3. "safe" stake = fractional Kelly (default 1/4) capped on the bankroll
+  4. sends to Telegram: who vs who, pick, odd+edge, stake, countdown, link
+  5. logs everything to data/prematch_paper.csv (fake stakes)
 
-AVVERTENZA: l'edge pre-match e' ~0 dimostrato (walk-forward 8k bet). Questo bot
-serve a RACCOGLIERE DATI prospettici in paper-trading, non a guadagnare.
+WARNING: the pre-match edge is a demonstrated ~0 (walk-forward, 8k bets). This
+bot exists to COLLECT prospective DATA in paper-trading, not to make money.
 
 Setup:
-  set -x THE_ODDS_API_KEY "..."          # the-odds-api.com (gratis 500/mese)
+  set -x THE_ODDS_API_KEY "..."          # the-odds-api.com (free, 500/month)
   set -x TELEGRAM_BOT_TOKEN "..."        # @BotFather
-  set -x TELEGRAM_CHAT_ID "..."          # il tuo chat id
+  set -x TELEGRAM_CHAT_ID "..."          # your chat id
 
-Uso:
-  python -m prematch_bot --dry-run                 # stampa a video, niente Telegram
+Usage:
+  python -m prematch_bot --dry-run                 # print to screen, no Telegram
   python -m prematch_bot --bankroll 200 --min_edge 0.04 --kelly 0.25
 """
 
@@ -51,9 +51,9 @@ def _countdown(commence) -> str:
 
 def _kelly_stake(prob: float, odd: float, bankroll: float,
                  kelly_frac: float, max_frac: float) -> tuple[float, float]:
-    """Kelly frazionario con cap. Ritorna (stake_eur, frazione_bankroll)."""
+    """Fractional Kelly with cap. Returns (stake_eur, bankroll_fraction)."""
     b = odd - 1.0
-    f_full = (prob * odd - 1.0) / b if b > 0 else 0.0   # Kelly pieno
+    f_full = (prob * odd - 1.0) / b if b > 0 else 0.0   # full Kelly
     frac = max(0.0, min(max_frac, kelly_frac * f_full))
     return round(frac * bankroll, 2), frac
 
@@ -81,12 +81,12 @@ def _log(row: dict):
 
 
 def evaluate_match(ev: dict, bankroll, min_edge, kelly_frac, max_frac):
-    """Ritorna (messaggio, row_log) se c'e' value, altrimenti None."""
+    """Return (message, row_log) if there is value, otherwise None."""
     surface, best_of, level = infer_surface_bestof(ev["sport_title"])
     try:
         res = predict_match(ev["p1"], ev["p2"], surface, best_of=best_of, level=level)
     except Exception:
-        return None  # giocatore non nei dati / nome non matchato
+        return None  # player not in data / name not matched
 
     prob_p1 = res["proba_p1_wins"]
     for name, prob in [(ev["p1"], prob_p1), (ev["p2"], 1 - prob_p1)]:
@@ -116,7 +116,7 @@ def evaluate_match(ev: dict, bankroll, min_edge, kelly_frac, max_frac):
             "match": f"{ev['p1']} vs {ev['p2']}", "pick": name, "prob": round(prob, 4),
             "odd": odd, "edge": round(edge, 4), "stake_eur": stake_eur,
             "book": ev["book"], "commence": ev["commence_time"].isoformat(),
-            "result": "", "pl": "",   # riempiti da settle_paper.py
+            "result": "", "pl": "",   # filled in by settle_paper.py
         }
         return msg, row
     return None

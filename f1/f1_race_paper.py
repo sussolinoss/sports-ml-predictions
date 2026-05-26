@@ -1,19 +1,19 @@
 """
-Paper trading podium gara singola. Usa modello P(podio) f1_podium (0.833 test).
+Single-race podium paper trading. Uses the f1_podium P(podium) model (0.833 test).
 
-Uso:
-  # Calcola P(podio) per prossima gara (round corrente +1)
+Usage:
+  # Compute P(podium) for the next race (current round +1)
   python -m f1_race_paper --predict
 
-  # Log quote bookies mercato "podium finish" (top-3) per gara
+  # Log bookmaker odds for the "podium finish" (top-3) market per race
   python -m f1_race_paper --book sisal --race "spanish_gp_2026" \\
       --add antonelli=1.40 norris=1.50 russell=2.00 piastri=2.50 ...
 
-  # Report ROI cumulato
+  # Cumulative ROI report
   python -m f1_race_paper --report
 
-Mercato target: "Podium Finish" / "Top 3" per pilota (quota individuale per ogni driver
-arrivare a podio). Diverso da "Race Winner" (1 solo vincitore).
+Target market: "Podium Finish" / "Top 3" per driver (individual odds for each driver
+to finish on the podium). Different from "Race Winner" (a single winner).
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ MIN_EDGE = 0.05
 
 
 def predict_next_race():
-    """Carica modello + predict P(podio) per ultima gara disponibile (proxy 'prossima')."""
+    """Load model + predict P(podium) for the latest available race (proxy for 'next')."""
     m = CatBoostClassifier()
     m.load_model(str(PROCESSED_DIR / "f1_podium.cbm"))
     cal = joblib.load(PROCESSED_DIR / "f1_calibrator.pkl")
@@ -91,7 +91,7 @@ def cmd_add(book: str, race: str, quotes: dict[str, float], min_edge: float):
                   f"{edge*100:>+8.1f}%  {mark}")
             w.writerow([ts, book, race, season, rnd, drv, odd, f"{impl:.4f}",
                         f"{p:.4f}", f"{edge:.4f}",
-                        5.0 if edge > min_edge else 0.0,  # stake default 5€/bet
+                        5.0 if edge > min_edge else 0.0,  # default stake 5 EUR/bet
                         "open" if edge > min_edge else "no-bet", ""])
             if edge > min_edge:
                 n_bet += 1
@@ -101,7 +101,7 @@ def cmd_add(book: str, race: str, quotes: dict[str, float], min_edge: float):
 
 
 def cmd_settle(race: str, podium: list[str]):
-    """Marca race come settled. podium = lista di 3 driver_ids (a podio reale)."""
+    """Mark race as settled. podium = list of 3 driver_ids (the actual podium)."""
     if not LOG.exists():
         print("Nessun log"); return
     df = pd.read_csv(LOG)

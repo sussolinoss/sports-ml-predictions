@@ -1,6 +1,6 @@
 """
-MLP con nn.Embedding(driver) + nn.Embedding(constructor) + tabular features.
-Cattura identita' pilota/team oltre alle feature aggregate.
+MLP with nn.Embedding(driver) + nn.Embedding(constructor) + tabular features.
+Captures driver/team identity beyond the aggregate features.
 """
 from __future__ import annotations
 

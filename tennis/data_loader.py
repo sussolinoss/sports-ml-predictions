@@ -1,8 +1,8 @@
 """
-Scarica e carica i match ATP dal repository pubblico di Jeff Sackmann.
+Download and load ATP matches from Jeff Sackmann's public repository.
 https://github.com/JeffSackmann/tennis_atp
 
-Salva i CSV grezzi in data/raw/ e produce un unico DataFrame ordinato cronologicamente.
+Saves the raw CSVs in data/raw/ and produces a single chronologically ordered DataFrame.
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 
-# Permetti l'esecuzione sia come modulo (python -m src.data_loader)
-# sia come script (python src/data_loader.py)
+# Allow running both as a module (python -m src.data_loader)
+# and as a script (python src/data_loader.py)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import RAW_DIR, REFRESH_RECENT_YEARS, SACKMANN_BASE_URL, YEARS
 
 
-# Colonne minime che ci servono dai CSV Sackmann
+# Minimum columns we need from the Sackmann CSVs
 USEFUL_COLUMNS = [
     "tourney_id", "tourney_name", "surface", "draw_size", "tourney_level",
     "tourney_date", "match_num", "best_of", "round", "minutes",
@@ -29,12 +29,12 @@ USEFUL_COLUMNS = [
     "loser_id", "loser_name", "loser_hand", "loser_ht",
     "loser_age", "loser_rank", "loser_rank_points",
     "score",
-    # Statistiche match-by-match (servizio/risposta) per le feature rolling
+    # Match-by-match serve/return statistics for the rolling features
     "w_ace", "w_df", "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", "w_bpSaved", "w_bpFaced",
     "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon", "l_2ndWon", "l_bpSaved", "l_bpFaced",
 ]
 
-# Colonne statistiche da convertire a numerico
+# Statistic columns to coerce to numeric
 STAT_COLUMNS = [
     "w_ace", "w_df", "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", "w_bpSaved", "w_bpFaced",
     "l_ace", "l_df", "l_svpt", "l_1stIn", "l_1stWon", "l_2ndWon", "l_bpSaved", "l_bpFaced",
@@ -42,7 +42,7 @@ STAT_COLUMNS = [
 
 
 def download_year(year: int, overwrite: bool = False) -> Path:
-    """Scarica il CSV di un singolo anno se non già presente."""
+    """Download the CSV for a single year if not already present."""
     target = RAW_DIR / f"atp_matches_{year}.csv"
     if target.exists() and not overwrite:
         return target
@@ -51,8 +51,8 @@ def download_year(year: int, overwrite: bool = False) -> Path:
     response = requests.get(url, timeout=30)
     if response.status_code != 200:
         raise RuntimeError(
-            f"Download fallito per anno {year} (HTTP {response.status_code}). "
-            f"Controlla che l'anno esista nel repo."
+            f"Download failed for year {year} (HTTP {response.status_code}). "
+            f"Check that the year exists in the repo."
         )
     target.write_bytes(response.content)
     return target
@@ -60,8 +60,8 @@ def download_year(year: int, overwrite: bool = False) -> Path:
 
 def download_all(years: list[int] | None = None,
                  refresh_recent: int = REFRESH_RECENT_YEARS) -> list[Path]:
-    """Scarica tutti gli anni configurati. Gli ultimi `refresh_recent` anni vengono
-    SEMPRE ri-scaricati (overwrite) perche' in stagione il repo li aggiorna."""
+    """Download all configured years. The last `refresh_recent` years are
+    ALWAYS re-downloaded (overwrite) because the repo updates them in-season."""
     years = years or YEARS
     refresh_set = set(years[-refresh_recent:]) if refresh_recent > 0 else set()
     paths = []
@@ -75,13 +75,13 @@ def download_all(years: list[int] | None = None,
 
 def load_matches(years: list[int] | None = None) -> pd.DataFrame:
     """
-    Carica tutti i CSV scaricati in un unico DataFrame ordinato per data.
+    Load all downloaded CSVs into a single DataFrame ordered by date.
 
-    Restituisce un DataFrame con:
-      - tourney_date convertito a pandas datetime
-      - solo le colonne in USEFUL_COLUMNS
-      - rimossi i match senza vincitore o senza data
-      - ordinato per (tourney_date, match_num)
+    Returns a DataFrame with:
+      - tourney_date converted to pandas datetime
+      - only the columns in USEFUL_COLUMNS
+      - matches without a winner or without a date removed
+      - sorted by (tourney_date, match_num)
     """
     years = years or YEARS
     frames = []
@@ -91,7 +91,7 @@ def load_matches(years: list[int] | None = None) -> pd.DataFrame:
             print(f"  ! File mancante: {path.name}, lo salto")
             continue
         df = pd.read_csv(path, low_memory=False)
-        # Tieni solo le colonne che esistono davvero (la struttura cambia un po' nel tempo)
+        # Keep only the columns that actually exist (the schema shifts over time)
         cols = [c for c in USEFUL_COLUMNS if c in df.columns]
         frames.append(df[cols])
 
@@ -100,26 +100,26 @@ def load_matches(years: list[int] | None = None) -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
 
-    # Parsing data
+    # Parse date
     df["tourney_date"] = pd.to_datetime(
         df["tourney_date"], format="%Y%m%d", errors="coerce"
     )
     df = df.dropna(subset=["tourney_date", "winner_id", "loser_id"])
 
-    # Conversioni
+    # Type conversions
     df["winner_id"] = df["winner_id"].astype(int)
     df["loser_id"] = df["loser_id"].astype(int)
     df["best_of"] = df["best_of"].fillna(3).astype(int)
     df["surface"] = df["surface"].fillna("Unknown")
 
-    # Numeric coercion per le feature che useremo
+    # Numeric coercion for the features we will use
     for col in ["winner_ht", "winner_age", "winner_rank", "winner_rank_points",
                 "loser_ht", "loser_age", "loser_rank", "loser_rank_points",
                 "minutes"] + STAT_COLUMNS:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Ordinamento cronologico stretto: serve per evitare leakage in feature engineering
+    # Strict chronological ordering: required to avoid leakage in feature engineering
     df = df.sort_values(["tourney_date", "match_num"]).reset_index(drop=True)
     return df
 

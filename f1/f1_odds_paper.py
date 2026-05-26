@@ -1,22 +1,22 @@
 """
-F1 outright paper trading: quote campionato pilota da The Odds API.
-Confronta con modello P(top-3) → log bet con edge positivo.
+F1 outright paper trading: driver championship odds from The Odds API.
+Compares against the P(top-3) model and logs bets with positive edge.
 
 Setup:
-  1. Signup gratis su https://the-odds-api.com (500 chiamate/mese free)
-  2. export THE_ODDS_API_KEY="la-tua-key"
-  3. python -m f1_odds_paper --fetch           # scarica quote + log bet
-  4. python -m f1_odds_paper --roi             # ROI cumulato + report
+  1. Sign up for free at https://the-odds-api.com (500 calls/month free)
+  2. export THE_ODDS_API_KEY="your-key"
+  3. python -m f1_odds_paper --fetch           # fetch odds + log bets
+  4. python -m f1_odds_paper --roi             # cumulative ROI + report
 
-Markets supportati:
-  - outrights (Drivers Championship Winner) - quote stagione
-  - In futuro: race winner per gara singola
+Supported markets:
+  - outrights (Drivers Championship Winner) - season odds
+  - Future: race winner for a single race
 
-Strategia paper:
-  - Calcola edge: model_p * decimal_odd - 1
-  - Bet se edge > MIN_EDGE (default 5%)
-  - Stake flat 1 unita' (Kelly frazionario opzionale)
-  - Settle: a fine stagione, hit = driver vince campionato (per outright winner)
+Paper strategy:
+  - Compute edge: model_p * decimal_odd - 1
+  - Bet if edge > MIN_EDGE (default 5%)
+  - Flat stake of 1 unit (fractional Kelly optional)
+  - Settle: at season end, hit = driver wins the championship (for outright winner)
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from f1_data import PROCESSED_DIR
 BASE = "https://api.the-odds-api.com/v4"
 SPORT = "motorsport_f1"
 LOG_FILE = PROCESSED_DIR / "f1_paper_bets.csv"
-MIN_EDGE = 0.05  # 5% edge minimo
+MIN_EDGE = 0.05  # minimum 5% edge
 
 
 def _key() -> str:
@@ -45,8 +45,8 @@ def _key() -> str:
 
 
 def fetch_outrights(regions: str = "eu", book: str | None = None) -> dict:
-    """Fetch quote outright F1 (Drivers Championship Winner).
-    Ritorna {event_title: {driver_name: best_odd}}."""
+    """Fetch F1 outright odds (Drivers Championship Winner).
+    Returns {event_title: {driver_name: best_odd}}."""
     r = requests.get(
         f"{BASE}/sports/{SPORT}/odds/",
         params={"apiKey": _key(), "regions": regions, "markets": "outrights",
@@ -61,7 +61,7 @@ def fetch_outrights(regions: str = "eu", book: str | None = None) -> dict:
     out = {}
     for ev in events:
         title = ev.get("sport_title", "") + " | " + ev.get("commence_time", "")[:10]
-        # per ogni outcome (driver), prendi quota MIGLIORE fra book disponibili (o specifica)
+        # for each outcome (driver), take the BEST odds across available books (or a specific one)
         best: dict[str, tuple[float, str]] = {}
         for b in ev.get("bookmakers", []):
             if book and b.get("key") != book:
@@ -81,7 +81,7 @@ def fetch_outrights(regions: str = "eu", book: str | None = None) -> dict:
     return out
 
 
-# Mapping nome bookmaker → driverId Ergast
+# Mapping bookmaker name -> Ergast driverId
 NAME_MAP = {
     "max verstappen": "max_verstappen", "verstappen": "max_verstappen",
     "lando norris": "norris", "norris": "norris",
@@ -109,7 +109,7 @@ NAME_MAP = {
 
 
 def model_probs() -> dict[str, float]:
-    """Carica modello P(vince campionato) + predict su round corrente."""
+    """Load the P(wins championship) model and predict on the current round."""
     import joblib
     from catboost import CatBoostClassifier
     from f1_data import load_results
@@ -125,7 +125,7 @@ def model_probs() -> dict[str, float]:
     snap = ds[(ds.season == cur_season) & (ds["round"] == cur_round)].copy()
     p = cal.predict(m.predict_proba(snap[FEAT_COLS].values)[:, 1])
     snap["p"] = p
-    # normalizza cross-driver perche' P(vince) deve sommare 1 (1 solo campione/anno)
+    # normalise cross-driver because P(wins) must sum to 1 (a single champion/year)
     snap["p_norm"] = snap["p"] / snap["p"].sum().clip(lower=1e-9)
     return dict(zip(snap["driver"], snap["p_norm"])), cur_season, cur_round
 
@@ -182,7 +182,7 @@ def cmd_roi():
     print(f"Bet totali: {len(bets)}  (settled: {len(settled)}  open: {len(open_bets)})")
     if settled.empty:
         print("Nessuna bet settled. Risultati attesi fine stagione.")
-        # mostro top edge open
+        # show the top open edges
         if not open_bets.empty:
             print("\nTop edge open:")
             top = open_bets.sort_values("edge", ascending=False).head(10)
@@ -199,7 +199,7 @@ def cmd_roi():
 
 
 def cmd_settle(winner_id: str, season: int):
-    """Marca tutte le bet della stagione come settled e specifica vincitore."""
+    """Mark all season bets as settled and record the winner."""
     import pandas as pd
     bets = pd.read_csv(LOG_FILE)
     mask = (bets["season"] == season) & (bets["status"] == "open")

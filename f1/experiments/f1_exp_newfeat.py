@@ -1,5 +1,5 @@
-"""Aggiungo 3 feat creative: team_change, age*log(exp), champ_pos_momentum (3-gare delta).
-Test multi-seed FULL vs FULL+nuove (decay tau=1.5, CPU)."""
+"""Add 3 engineered features: team_change, age*log(exp), champ_pos_momentum (3-race delta).
+Multi-seed test FULL vs FULL+new (decay tau=1.5, CPU)."""
 from __future__ import annotations
 
 import sys

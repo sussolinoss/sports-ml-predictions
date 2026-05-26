@@ -1,12 +1,12 @@
 """
-Confronto F1: modello podio SENZA vs CON passo-gara/degrado-gomme (FastF1).
+F1 comparison: podium model WITHOUT vs WITH race-pace/tyre-degradation (FastF1).
 
-Prerequisito:  python -m fastf1_pace   (estrae race_pace.json, lento la 1a volta)
+Prerequisite:  python -m fastf1_pace   (extracts race_pace.json, slow the first time)
 
-Le feature driver_race_pace / driver_tyre_deg sono ROLLING dalle gare passate
--> anti-leakage. Misura se aggiungono segnale oltre quali_gap + form.
+The driver_race_pace / driver_tyre_deg features are ROLLING from past races
+-> anti-leakage. Measures whether they add signal beyond quali_gap + form.
 
-Uso:  python -m f1_pace_eval --test 2025
+Usage:  python -m f1_pace_eval --test 2025
 """
 
 from __future__ import annotations

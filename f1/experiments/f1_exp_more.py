@@ -1,6 +1,6 @@
 """
-HistGradientBoosting + ExtraTrees + CatBoost con polynomial interactions
-sui top feature (grid * constructor_form, quali_gap * driver_recovery, ecc).
+HistGradientBoosting + ExtraTrees + CatBoost with polynomial interactions
+on the top features (grid * constructor_form, quali_gap * driver_recovery, etc).
 """
 from __future__ import annotations
 

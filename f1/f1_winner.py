@@ -1,7 +1,7 @@
 """
-Modello P(vince gara) — label position==1.
-Pipeline identica a f1_podium (CatBoost+decay+CPU+seed42) ma label diversa.
-A Monaco grid dominante (pole = 80% chance vittoria).
+P(wins race) model — label position==1.
+Same pipeline as f1_podium (CatBoost+decay+CPU+seed42) but a different label.
+At Monaco the grid dominates (pole = 80% win chance).
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from f1_podium import FEATURE_COLS, _precision_at3, build_features
 
 
 def precision_at_1(df_eval, prob_col):
-    """Top-1 per gara: dei piloti col p piu' alto, quante volte e' il vero vincitore."""
+    """Top-1 per race: among the drivers with the highest p, how often it is the true winner."""
     hits = tot = 0
     for (_, _), g in df_eval.groupby(["season", "round"]):
         top = g.nlargest(1, prob_col)
@@ -76,7 +76,7 @@ def main():
     import joblib
     joblib.dump(cal, PROCESSED_DIR / "f1_winner_cal.pkl")
 
-    # softmax cross-driver per gara (sum=1, 1 vincitore)
+    # cross-driver softmax per race (sum=1, 1 winner)
     from f1_champ_v2 import softmax_per_group
     logit = m.predict(Xte, prediction_type="RawFormulaVal")
     g = (te["season"].astype(str) + "_" + te["round"].astype(str)).values
@@ -86,7 +86,7 @@ def main():
     p1_sm = precision_at_1(te, "p_win_sm")
     print(f"Top-1 softmax: {p1_sm:.3f}")
 
-    # predict ultima gara disponibile
+    # predict the latest available race
     cur_season = int(feat.season.max())
     cur_round = int(feat[feat.season == cur_season]["round"].max())
     snap = feat[(feat.season == cur_season) & (feat["round"] == cur_round)].copy()

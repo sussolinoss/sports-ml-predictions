@@ -1,12 +1,12 @@
 """
-Settle delle bet paper di prematch_bot: recupera i risultati veri (The Odds API
-scores), riempie le colonne result/pl in data/prematch_paper.csv, e stampa il ROI
-paper aggiornato con intervallo di confidenza bootstrap.
+Settle the paper bets from prematch_bot: fetch the real results (The Odds API
+scores), fill the result/pl columns in data/prematch_paper.csv, and print the
+updated paper ROI with a bootstrap confidence interval.
 
-NB: The Odds API free dà i risultati solo degli ultimi ~3 giorni. Lancia il settle
-ogni 1-2 giorni perche' i match piu' vecchi di 3 giorni non saranno piu' recuperabili.
+Note: The Odds API free tier returns results only for the last ~3 days. Run the
+settle every 1-2 days, since matches older than 3 days are no longer retrievable.
 
-Uso:
+Usage:
     python -m settle_paper
 """
 
@@ -34,7 +34,7 @@ def settle() -> pd.DataFrame:
     pending = df[df["result"].isna() | (df["result"].astype(str).str.strip() == "")]
     print(f"{len(df)} bet totali, {len(pending)} da settlare")
 
-    # raggruppa per sport_key per minimizzare le chiamate API
+    # group by sport_key to minimize API calls
     winners: dict[str, str | None] = {}
     for sport_key in pending["sport_key"].dropna().unique():
         try:
@@ -47,7 +47,7 @@ def settle() -> pd.DataFrame:
         ev_id = df.at[idx, "event_id"]
         win = winners.get(ev_id)
         if not win:
-            continue  # non ancora completato o fuori finestra 3gg
+            continue  # not yet completed or outside the 3-day window
         pick = df.at[idx, "pick"]
         stake = float(df.at[idx, "stake_eur"])
         odd = float(df.at[idx, "odd"])

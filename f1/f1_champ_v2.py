@@ -1,8 +1,8 @@
 """
-v2 modello P(vince campionato): softmax cross-driver + temperature scaling.
-- Raw score CatBoost (logit) per ogni (season, round, driver)
-- Per (season, round): softmax over driver attivi → P somma 1
-- Temperature τ ottimizzata su val (minimize Brier o NLL)
+v2 model for P(wins championship): cross-driver softmax + temperature scaling.
+- CatBoost raw score (logit) for each (season, round, driver)
+- Per (season, round): softmax over active drivers, P sums to 1
+- Temperature tau optimised on val (minimise Brier or NLL)
 - Cross-season calibration check: reliability diagram + ECE
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from f1_champ import FEAT_COLS, build_champ_dataset
 
 
 def softmax_per_group(logits, group_ids, T=1.0):
-    """Softmax con temperature T applicato per gruppo (season, round)."""
+    """Softmax with temperature T applied per group (season, round)."""
     out = np.zeros_like(logits, dtype=np.float64)
     for g in np.unique(group_ids):
         mask = group_ids == g
@@ -34,7 +34,7 @@ def softmax_per_group(logits, group_ids, T=1.0):
 
 
 def fit_temperature(logits_val, y_val, group_val, metric="brier"):
-    """Ottimizza temperature scaling. Bound T>=1.0 (no anti-cal)."""
+    """Optimise temperature scaling. Bound T>=1.0 (no anti-calibration)."""
     def loss(T):
         p = softmax_per_group(logits_val, group_val, T=T)
         if metric == "brier":
@@ -63,7 +63,7 @@ def main():
     ds = build_champ_dataset(df)
     print(f"dataset: {len(ds):,} righe, {ds.season.nunique()} stagioni")
 
-    test_y = 2025; train_max = 2019  # val = ultime 5 stagioni (2020-2024)
+    test_y = 2025; train_max = 2019  # val = last 5 seasons (2020-2024)
     tr = ds[ds.season <= train_max].copy()
     va = ds[(ds.season > train_max) & (ds.season < test_y)].copy()
     te = ds[ds.season == test_y].copy()
@@ -72,7 +72,7 @@ def main():
     Xte, yte = te[FEAT_COLS].values, te["is_champ"].values
     w = np.exp(-(train_max - tr["season"].values) / 10.0)
 
-    # CatBoost RAW logits (no calibration interna - usa RawFormulaVal)
+    # CatBoost RAW logits (no internal calibration - uses RawFormulaVal)
     m = CatBoostClassifier(
         iterations=2000, depth=5, learning_rate=0.03,
         boosting_type="Ordered", bootstrap_type="Bernoulli", subsample=0.85,
@@ -99,13 +99,13 @@ def main():
     print(f"\n[softmax cross-driver T=1.0]")
     print(f"  Brier {brier_score_loss(yte, p_sm_te):.4f}  ECE {ece(p_sm_te, yte):.4f}")
 
-    # fit T su val
+    # fit T on val
     T_opt, nll_val = fit_temperature(logit_va, yva, g_va)
     print(f"\n[temperature scaling]: T_opt = {T_opt:.3f}  (NLL_val = {nll_val:.4f})")
     p_cal_te = softmax_per_group(logit_te, g_te, T=T_opt)
     print(f"  Brier {brier_score_loss(yte, p_cal_te):.4f}  ECE {ece(p_cal_te, yte):.4f}")
 
-    # top-1 per round con softmax cal
+    # top-1 per round with calibrated softmax
     te2 = te.copy(); te2["p"] = p_cal_te
     hits = tot = 0; sum_p_top = 0
     for rnd, g in te2.groupby("round"):
@@ -120,12 +120,12 @@ def main():
     import joblib
     joblib.dump({"T": T_opt}, PROCESSED_DIR / "f1_champ_v2_T.pkl")
 
-    # PREDICT 2026 round corrente con calibration
+    # PREDICT current 2026 round with calibration
     cur_season = int(ds.season.max())
     cur_round = int(ds[ds.season == cur_season]["round"].max())
     snap = ds[(ds.season == cur_season) & (ds["round"] == cur_round)].copy()
     logit_now = m.predict(snap[FEAT_COLS].values, prediction_type="RawFormulaVal")
-    g_now = np.zeros(len(snap), dtype=int)  # 1 gruppo (1 gara)
+    g_now = np.zeros(len(snap), dtype=int)  # 1 group (1 race)
     p_now = softmax_per_group(logit_now, g_now, T=T_opt)
     snap["p_champ"] = p_now
     print(f"\n=== PREDICT campione {cur_season} dopo round {cur_round} (calibrato T={T_opt:.2f}) ===")

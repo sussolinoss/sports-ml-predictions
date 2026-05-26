@@ -1,16 +1,15 @@
 """
 TCN (Temporal Convolutional Network) + XGBoost: stacking.
 
-Per ogni (pilota, gara) costruisco la sequenza delle ULTIME K=8 gare (pos/podio/
-dnf/punti, normalizzati) -> TCN dilated (kernel 3, dil 1/2/4) -> P(podio).
-Anti-leakage: per i train rows uso predizioni OOF (3-fold); val/test predette
-dal TCN allenato su tutto il train. Aggiungo p_tcn come 23a feature all'XGBoost
-finale (FEATURE_COLS + p_tcn) e misuro precision@3.
+For each (driver, race) build the sequence of the LAST K=8 races (pos/podium/
+dnf/points, normalised) -> dilated TCN (kernel 3, dil 1/2/4) -> P(podium).
+Anti-leakage: for train rows use OOF predictions (3-fold); val/test predicted
+by the TCN trained on the whole train set. Add p_tcn as the 23rd feature to the
+final XGBoost (FEATURE_COLS + p_tcn) and measure precision@3.
 
-Aspettativa onesta: marginale (le lag features gia' catturano parte del temporale).
-Vale come 8a prova rigorosa per il paper.
+Honest expectation: marginal (the lag features already capture some of the temporal signal).
 
-Uso:  python -m f1_tcn --test 2025
+Usage:  python -m f1_tcn --test 2025
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ torch.manual_seed(SEED)
 
 
 def build_sequences(df: pd.DataFrame):
-    """Per ogni riga, sequenza (K, CH) delle ultime K gare del pilota (anti-leakage)."""
+    """For each row, the (K, CH) sequence of the driver's last K races (anti-leakage)."""
     state = defaultdict(lambda: deque(maxlen=K))
     seqs = np.zeros((len(df), K, CH), dtype=np.float32)
     y = np.zeros(len(df), dtype=np.float32)
@@ -53,7 +52,7 @@ def build_sequences(df: pd.DataFrame):
             seqs[i, t] = seq[t]
         y[i] = int(r.podium)
         keys.append((r.season, r.round, r.driver))
-        # update DOPO la lettura
+        # update AFTER reading
         d.append((min(r.position, 20) / 20.0, int(r.podium),
                   int(not bool(r.finished)), min(r.points, 25) / 25.0))
     return seqs, y, keys
@@ -73,7 +72,7 @@ class TCN(nn.Module):
         x = torch.relu(self.c1(x))
         x = torch.relu(self.c2(x))
         x = torch.relu(self.c3(x))
-        x = x.mean(dim=2)            # global avg pool sul tempo
+        x = x.mean(dim=2)            # global avg pool over time
         return torch.sigmoid(self.fc(self.drop(x))).squeeze(-1)
 
 
@@ -129,7 +128,7 @@ def main():
     df = load_results()
     feat = F.build_features(df)
     seqs, y_all, _ = build_sequences(df)
-    # allinea: feat ha l'ordine cronologico di df (load_results sorta), seqs idem
+    # align: feat keeps df's chronological order (load_results sorts it), and so do seqs
     assert len(feat) == len(seqs) == len(df), f"misalign {len(feat)} {len(seqs)} {len(df)}"
 
     tr_mask = (feat.season <= args.test - 2).to_numpy()
@@ -137,7 +136,7 @@ def main():
     te_mask = (feat.season == args.test).to_numpy()
     print(f"train {tr_mask.sum()}  val {va_mask.sum()}  test {te_mask.sum()}")
 
-    # OOF p_tcn sul train (3-fold, no leakage)
+    # OOF p_tcn on train (3-fold, no leakage)
     p_tcn = np.zeros(len(df), dtype=np.float32)
     tr_idx = np.where(tr_mask)[0]
     kf = KFold(n_splits=3, shuffle=True, random_state=SEED)
@@ -147,7 +146,7 @@ def main():
         p_tcn[b] = predict(m, seqs[b])
         print(f"  fold {fi}/3 done")
 
-    # TCN finale su tutto il train -> predice val + test
+    # final TCN on the whole train set -> predicts val + test
     m_full = train_tcn(seqs[tr_mask], y_all[tr_mask], seqs[va_mask], y_all[va_mask])
     p_tcn[va_mask] = predict(m_full, seqs[va_mask])
     p_tcn[te_mask] = predict(m_full, seqs[te_mask])

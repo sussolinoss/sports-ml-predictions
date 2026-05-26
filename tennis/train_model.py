@@ -35,7 +35,7 @@ from feature_engineering import FEATURE_COLUMNS
 
 
 def time_split(df: pd.DataFrame):
-    """Restituisce (train, val, test) DataFrames con split temporale."""
+    """Return (train, val, test) DataFrames with a temporal split."""
     y = df["year"]
     train = df[(y > BURNIN_END_YEAR) & (y <= TRAIN_END_YEAR)]
     val = df[(y > TRAIN_END_YEAR) & (y <= VAL_END_YEAR)]
@@ -45,12 +45,12 @@ def time_split(df: pd.DataFrame):
 
 def baseline_elo_accuracy(df: pd.DataFrame) -> dict:
     """
-    Baseline: predici p1 vince se il suo ELO è > di p2.
-    Serve per misurare quanto XGBoost aggiunge oltre l'ELO puro.
+    Baseline: predict p1 wins if its ELO is greater than p2's.
+    Used to measure how much XGBoost adds over pure ELO.
     """
     pred = (df["elo_diff"] > 0).astype(int)
     acc = accuracy_score(df["p1_wins"], pred)
-    # Probabilità ELO classica
+    # Classic ELO probability
     proba = 1.0 / (1.0 + 10 ** (-df["elo_diff"] / 400.0))
     ll = log_loss(df["p1_wins"], proba.clip(1e-6, 1 - 1e-6))
     bs = brier_score_loss(df["p1_wins"], proba)
@@ -91,7 +91,7 @@ def main():
             "Val o test set vuoto. Controlla TRAIN_END_YEAR / VAL_END_YEAR in config.py."
         )
 
-    # Baseline ELO puro per riferimento
+    # Pure ELO baseline for reference
     print("\n--- Baseline ELO puro ---")
     for name, split in [("val", val_df), ("test", test_df)]:
         m = baseline_elo_accuracy(split)
@@ -123,15 +123,15 @@ def main():
 
     print(f"\nBest iteration: {model.best_iteration}")
 
-    # Valutazione finale
+    # Final evaluation
     print("\n--- Risultati XGBoost ---")
     val_metrics = evaluate(model, X_va, y_va)
     test_metrics = evaluate(model, X_te, y_te)
     print(f"  val:  acc={val_metrics['accuracy']:.4f}  logloss={val_metrics['log_loss']:.4f}  brier={val_metrics['brier']:.4f}")
     print(f"  test: acc={test_metrics['accuracy']:.4f}  logloss={test_metrics['log_loss']:.4f}  brier={test_metrics['brier']:.4f}")
 
-    # Calibrazione isotonica (sul val set): le prob raw di XGBoost sono spesso
-    # over-confident; questo rende l'EDGE calcolato per le scommesse affidabile.
+    # Isotonic calibration (on the val set): raw XGBoost probabilities are often
+    # over-confident; this makes the betting EDGE computed from them reliable.
     val_proba = model.predict(dval)
     calibrator = IsotonicRegression(out_of_bounds="clip")
     calibrator.fit(val_proba, y_va.values)
@@ -144,14 +144,13 @@ def main():
           f"calibrato={log_loss(y_te, cal_test.clip(1e-6, 1-1e-6)):.4f}")
     print(f"  (accuracy invariata; cambia solo l'affidabilita' delle probabilita')")
 
-    # Feature importance
     print("\n--- Top 15 feature ---")
     importance = model.get_score(importance_type="gain")
     sorted_imp = sorted(importance.items(), key=lambda x: -x[1])[:15]
     for name, gain in sorted_imp:
         print(f"  {name:25s} gain={gain:.1f}")
 
-    # Salva modello + metadati
+    # Save model + metadata
     model.save_model(str(MODEL_PATH))
     meta = {
         "feature_columns": FEATURE_COLUMNS,

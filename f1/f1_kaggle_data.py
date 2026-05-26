@@ -1,7 +1,7 @@
 """
-Loader dataset Kaggle (RaceData-main). Fornisce con COPERTURA COMPLETA:
-- standings driver post-round (clean, no rate-limit)
-- safety car rate per circuit (chaos proxy, statico)
+Kaggle dataset loader (RaceData-main). Provides, with FULL COVERAGE:
+- driver standings post-round (clean, no rate-limit)
+- safety car rate per circuit (chaos proxy, static)
 """
 
 from __future__ import annotations
@@ -36,12 +36,12 @@ def load_driver_standings_full() -> pd.DataFrame:
 
 
 def load_circuit_chaos_rate() -> pd.DataFrame:
-    """Per circuitId, frazione gare passate con safety car deployed (chaos proxy)."""
+    """Per circuitId, fraction of past races with a safety car deployed (chaos proxy)."""
     races = _load_csv("races.csv")
     sc = _load_csv("safety_cars.csv")
     if races.empty or sc.empty:
         return pd.DataFrame()
-    # safety_cars usa Race name "1994 Japanese Grand Prix"; estraggo year+name e join
+    # safety_cars uses a Race name like "1994 Japanese Grand Prix"; extract year+name and join
     sc[["yr_str", "race_name"]] = sc["Race"].str.extract(r"^(\d{4})\s+(.+)$")
     sc["yr_str"] = pd.to_numeric(sc["yr_str"], errors="coerce")
     sc_races = sc.dropna(subset=["yr_str"]).rename(columns={"yr_str": "year",
@@ -49,7 +49,7 @@ def load_circuit_chaos_rate() -> pd.DataFrame:
     races_sc = races.merge(sc_races[["year", "name"]].assign(_has=1),
                            on=["year", "name"], how="left")
     races_sc["_has"] = races_sc["_has"].fillna(0)
-    # per ogni circuitId, frazione di gare passate con SC
+    # per circuitId, fraction of past races with a safety car
     rate = races_sc.groupby("circuitId")["_has"].mean().reset_index() \
                    .rename(columns={"circuitId": "circuit_kaggle_id", "_has": "circuit_chaos_rate"})
     # mapping circuit kaggle (int) -> ergast circuitId (string) via circuits.csv

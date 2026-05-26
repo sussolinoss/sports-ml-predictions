@@ -49,10 +49,10 @@ STREET_CIRCUITS = {"monaco", "marina_bay", "baku", "jeddah", "miami",
 
 
 def _lag(dq, i):
-    """elemento da i posizioni indietro (0 = piu' recente), NaN se non c'e'."""
+    """element i positions back (0 = most recent), NaN if absent."""
     return dq[-1 - i] if len(dq) > i else float("nan")
 
-# parole nel campo 'status' che indicano rottura MECCANICA (non incidente/squalifica)
+# words in the 'status' field that indicate a MECHANICAL failure (not crash/disqualification)
 _MECH = ("engine", "power unit", "gearbox", "hydraul", "transmission", "electric",
          "turbo", "fuel", "oil", "water", "mechanical", "clutch", "suspension",
          "brakes", "exhaust", "radiator", "driveshaft", "throttle", "overheating",
@@ -70,42 +70,42 @@ def _avg(dq, default):
 
 def build_features(df: pd.DataFrame, wet_map: dict | None = None,
                    pace_map: dict | None = None) -> pd.DataFrame:
-    """Itera le gare in ordine cronologico; feature pre-gara, poi aggiorna lo stato.
+    """Iterate races in chronological order; compute pre-race features, then update state.
     wet_map -> 'is_wet' + 'driver_wet_form'. pace_map -> 'driver_race_pace' +
-    'driver_tyre_deg' (passo gara e degrado gomme rolling dalle gare passate,
+    'driver_tyre_deg' (race pace and tyre degradation rolling from past races,
     anti-leakage)."""
     weather_on = wet_map is not None
     pace_on = pace_map is not None
     drv_wet = defaultdict(lambda: deque(maxlen=8))
     drv_pace = defaultdict(lambda: deque(maxlen=6))
     drv_deg = defaultdict(lambda: deque(maxlen=6))
-    drv_lag_pos = defaultdict(lambda: deque(maxlen=3))   # lag features: ultime 3 gare
+    drv_lag_pos = defaultdict(lambda: deque(maxlen=3))   # lag features: last 3 races
     drv_lag_pod = defaultdict(lambda: deque(maxlen=3))
     drv_lag_dnf = defaultdict(lambda: deque(maxlen=3))
-    drv_recov = defaultdict(lambda: deque(maxlen=10))    # (grid - posizione finale)
-    con_street = defaultdict(lambda: deque(maxlen=12))   # team su cittadini passati
-    con_perm = defaultdict(lambda: deque(maxlen=12))     # team su permanenti passati
-    drv_street = defaultdict(lambda: deque(maxlen=10))   # pilota su cittadini passati
-    drv_perm = defaultdict(lambda: deque(maxlen=10))     # pilota su permanenti passati
-    drv_pit_min = defaultdict(lambda: deque(maxlen=8))   # min pit-stationary time pilota
+    drv_recov = defaultdict(lambda: deque(maxlen=10))    # (grid - finishing position)
+    con_street = defaultdict(lambda: deque(maxlen=12))   # team on past street circuits
+    con_perm = defaultdict(lambda: deque(maxlen=12))     # team on past permanent circuits
+    drv_street = defaultdict(lambda: deque(maxlen=10))   # driver on past street circuits
+    drv_perm = defaultdict(lambda: deque(maxlen=10))     # driver on past permanent circuits
+    drv_pit_min = defaultdict(lambda: deque(maxlen=8))   # min pit-stationary time driver
     con_pit_min = defaultdict(lambda: deque(maxlen=12))  # min pit-stationary time team (crew)
-    drv_con = defaultdict(lambda: deque(maxlen=10))      # (pilota, costruttore) -> posizioni
-    drv_speed = defaultdict(lambda: deque(maxlen=8))     # km/h giro veloce gare passate
-    drv_flrank = defaultdict(lambda: deque(maxlen=8))    # rank giro veloce gare passate
-    drv_tgap = defaultdict(list)                         # (driver, circuit) -> gap dal vincitore (ms)
+    drv_con = defaultdict(lambda: deque(maxlen=10))      # (driver, constructor) -> positions
+    drv_speed = defaultdict(lambda: deque(maxlen=8))     # fastest-lap km/h in past races
+    drv_flrank = defaultdict(lambda: deque(maxlen=8))    # fastest-lap rank in past races
+    drv_tgap = defaultdict(list)                         # (driver, circuit) -> gap to the winner (ms)
     drv_pos = defaultdict(lambda: deque(maxlen=5))
     drv_pts = defaultdict(lambda: deque(maxlen=5))
     drv_pod = defaultdict(lambda: deque(maxlen=10))
     drv_fin = defaultdict(lambda: deque(maxlen=10))
     con_pos = defaultdict(lambda: deque(maxlen=12))
     con_pod = defaultdict(lambda: deque(maxlen=12))
-    con_mech = defaultdict(lambda: deque(maxlen=12))   # rotture meccaniche team
-    track = defaultdict(list)        # (driver, circuit) -> posizioni
-    con_track = defaultdict(list)    # (constructor, circuit) -> posizioni
+    con_mech = defaultdict(lambda: deque(maxlen=12))   # team mechanical failures
+    track = defaultdict(list)        # (driver, circuit) -> positions
+    con_track = defaultdict(list)    # (constructor, circuit) -> positions
 
     rows = []
     for (_, _), g in df.groupby(["season", "round"], sort=False):
-        # 1) leggi stato PRE-gara
+        # 1) read PRE-race state
         for r in g.itertuples(index=False):
             rows.append({
                 "season": r.season, "round": r.round, "date": r.date,
@@ -156,9 +156,9 @@ def build_features(df: pd.DataFrame, wet_map: dict | None = None,
                 rows[-1]["is_wet"] = int(wet_map.get((r.season, r.round), 0))
                 rows[-1]["driver_wet_form"] = _avg(drv_wet[r.driver], NEUTRAL_POS)
             if pace_on:
-                rows[-1]["driver_race_pace"] = _avg(drv_pace[r.driver], 1.0)  # ~1s gap neutro
+                rows[-1]["driver_race_pace"] = _avg(drv_pace[r.driver], 1.0)  # ~1s neutral gap
                 rows[-1]["driver_tyre_deg"] = _avg(drv_deg[r.driver], 0.05)
-        # 2) aggiorna stato con l'esito reale
+        # 2) update state with the actual outcome
         for r in g.itertuples(index=False):
             drv_pos[r.driver].append(r.position)
             drv_pts[r.driver].append(r.points)
@@ -207,7 +207,7 @@ def build_features(df: pd.DataFrame, wet_map: dict | None = None,
 
 
 def _precision_at3(df_eval: pd.DataFrame, prob_col: str) -> float:
-    """Per ogni gara: dei 3 col prob piu' alta, quanti a podio. Media sui podi (3)."""
+    """Per race: of the 3 with highest predicted probability, how many reach the podium. Averaged over the podium size (3)."""
     hits = tot = 0
     for (_, _), g in df_eval.groupby(["season", "round"]):
         top3 = g.nlargest(3, prob_col)

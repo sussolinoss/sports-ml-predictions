@@ -1,12 +1,12 @@
 """
-Client The Odds API — match di tennis IN ARRIVO + quote pre-match.
-Gratis 500 chiamate/mese: https://the-odds-api.com/  -> registrati, prendi la API key.
+The Odds API client — UPCOMING tennis matches + pre-match odds.
+Free 500 calls/month: https://the-odds-api.com/  -> register, get the API key.
 
-  export THE_ODDS_API_KEY="la-tua-key"   (fish: set -x THE_ODDS_API_KEY "...")
+  export THE_ODDS_API_KEY="your-key"   (fish: set -x THE_ODDS_API_KEY "...")
 
-Espone:
-  upcoming_tennis(book="pinnacle", regions="eu") -> lista di match futuri con quote.
-Ogni match: {event_id, sport_title, commence_time(UTC), p1, p2, odds{p1,p2}, book, link}
+Exposes:
+  upcoming_tennis(book="pinnacle", regions="eu") -> list of future matches with odds.
+Each match: {event_id, sport_title, commence_time(UTC), p1, p2, odds{p1,p2}, book, link}
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import requests
 
 BASE = "https://api.the-odds-api.com/v4"
 
-# Link generici dei book (The Odds API non fornisce deep-link per match)
+# Generic book links (The Odds API does not provide per-match deep links)
 BOOK_HOME = {
     "pinnacle": "https://www.pinnacle.com/en/tennis",
     "betfair_ex_eu": "https://www.betfair.com/exchange/plus/tennis",
@@ -43,8 +43,8 @@ def _tennis_sport_keys() -> list[str]:
 
 
 def _best_odd(bookmakers: list, book: str | None):
-    """Ritorna (book_key, {name: price}). Se book specificato usa solo quello;
-    altrimenti prende la quota piu' alta per ciascun giocatore tra tutti i book."""
+    """Return (book_key, {name: price}). If a book is specified use only that one;
+    otherwise take the highest odd for each player across all books."""
     if book:
         for b in bookmakers:
             if b["key"] == book:
@@ -52,7 +52,7 @@ def _best_odd(bookmakers: list, book: str | None):
                     if m["key"] == "h2h":
                         return b["key"], {o["name"]: o["price"] for o in m["outcomes"]}
         return None, {}
-    # migliore quota disponibile per ogni outcome
+    # best available odd for each outcome
     best: dict[str, float] = {}
     best_book = "best"
     for b in bookmakers:
@@ -94,7 +94,7 @@ def upcoming_tennis(book: str | None = "pinnacle", regions: str = "eu") -> list[
 
 
 def results(sport_key: str, days_from: int = 3) -> dict[str, str | None]:
-    """event_id -> nome vincitore (o None se non completato). days_from max 3 (free tier)."""
+    """event_id -> winner name (or None if not completed). days_from max 3 (free tier)."""
     r = requests.get(f"{BASE}/sports/{sport_key}/scores/", params={
         "apiKey": _key(), "daysFrom": days_from,
     }, timeout=20)
@@ -117,7 +117,7 @@ def results(sport_key: str, days_from: int = 3) -> dict[str, str | None]:
 
 
 def infer_surface_bestof(sport_title: str) -> tuple[str, int, str]:
-    """Euristica superficie/best_of/livello dal nome torneo."""
+    """Heuristic for surface/best_of/level from the tournament name."""
     t = sport_title.lower()
     slam = any(s in t for s in ["grand slam", "wimbledon", "us open", "french open",
                                 "roland", "australian open"])

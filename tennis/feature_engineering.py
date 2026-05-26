@@ -1,13 +1,13 @@
 """
-Feature engineering anti-leakage.
+Anti-leakage feature engineering.
 
-REGOLA D'ORO: per ogni match, prima calcoliamo TUTTE le feature usando lo stato
-del mondo *prima* del match, poi (e solo poi) aggiorniamo lo stato con l'esito
-reale. Invertire l'ordine = leakage = accuratezza fasulla.
+GOLDEN RULE: for each match, first compute ALL features using the state of the
+world *before* the match, then (and only then) update the state with the real
+outcome. Reversing the order = leakage = fake accuracy.
 
-Output: un DataFrame con colonne `p1_*`, `p2_*` e target binario `p1_wins`.
-La scelta di chi è "p1" e chi è "p2" è randomizzata in modo deterministico
-(seed da config) per evitare che il modello impari "p1=sempre vincitore".
+Output: a DataFrame with `p1_*`, `p2_*` columns and the binary target `p1_wins`.
+The choice of who is "p1" and who is "p2" is randomized deterministically
+(seed from config) to keep the model from learning "p1=always winner".
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ def _encode_hand(h: object) -> int:
     return HAND_MAP.get(str(h).strip(), 0)
 
 
-# Factory picklabili per i defaultdict di MatchState (le lambda NON sono picklabili,
-# e lo stato viene salvato con joblib in final_state.pkl).
+# Picklable factories for the MatchState defaultdicts (lambdas are NOT picklable,
+# and the state is saved with joblib in final_state.pkl).
 def _new_form_deque() -> deque:
     return deque(maxlen=RECENT_FORM_WINDOW)
 
@@ -72,8 +72,8 @@ def _new_serve_deque() -> deque:
     return deque(maxlen=SERVE_WINDOW)
 
 
-# Statistiche rolling di servizio/risposta + priori realistici ATP (usati finche'
-# il giocatore non ha storico sufficiente).
+# Rolling serve/return statistics + realistic ATP priors (used until the player
+# has enough history).
 SERVE_METRICS = [
     "serve_pts_won", "ace_rate", "df_rate", "first_in", "first_won",
     "bp_saved", "return_pts_won",
@@ -85,7 +85,7 @@ SERVE_PRIORS = {
 
 
 def _serve_record(me: dict, opp: dict) -> dict:
-    """Record raw per-match di un giocatore (include i punti in risposta dall'avversario)."""
+    """Raw per-match record for a player (includes return points from the opponent)."""
     return {
         "svpt": me["svpt"], "ace": me["ace"], "df": me["df"],
         "firstIn": me["firstIn"], "firstWon": me["firstWon"], "secondWon": me["secondWon"],
@@ -96,7 +96,7 @@ def _serve_record(me: dict, opp: dict) -> dict:
 
 
 def _extract_serve(row, p: str) -> dict | None:
-    """Estrae le stat servizio raw per 'w' o 'l'. None se mancanti/non valide."""
+    """Extract the raw serve stats for 'w' or 'l'. None if missing/invalid."""
     def g(col):
         return getattr(row, f"{p}_{col}", np.nan)
 
@@ -118,18 +118,15 @@ def _extract_serve(row, p: str) -> dict | None:
     }
 
 
-# ---------------------------------------------------------------------------
-# Closing odds del bookmaker COME FEATURE (pre-match, no leakage).
-# Le quote sono pre-match: l'implied prob di un giocatore e' una quantita'
-# nota prima del match. L'assegnazione a p1/p2 segue lo SWAP deterministico,
-# non l'esito -> nessun leakage.
-# ---------------------------------------------------------------------------
+# Bookmaker closing odds AS A FEATURE (pre-match, no leakage).
+# Odds are pre-match: a player's implied probability is known before the match.
+# Assignment to p1/p2 follows the deterministic SWAP, not the outcome -> no leakage.
 _BOOK_DATE_TOL_DAYS = 14
 
 
 def build_book_index(years=None):
-    """Scarica le closing odds tennis-data.co.uk e costruisce l'indice coppia->quote.
-    Ritorna None se le quote non sono disponibili (book_proba_p1 sara' NaN)."""
+    """Download tennis-data.co.uk closing odds and build the pair->odds index.
+    Returns None if odds are unavailable (book_proba_p1 will be NaN)."""
     try:
         from odds_loader import build_pair_index, download_odds_years, load_odds
         yrs = list(years) if years is not None else None
@@ -140,13 +137,13 @@ def build_book_index(years=None):
         odds = load_odds(f"{min(yrs)}-01-01", f"{max(yrs)}-12-31", auto_download=False)
         print(f"  Closing odds caricate come feature: {len(odds):,} match con quota")
         return build_pair_index(odds)
-    except Exception as e:  # noqa: BLE001 - rete/openpyxl/file mancante: degrada a NaN
+    except Exception as e:  # noqa: BLE001 - network/openpyxl/missing file: degrade to NaN
         print(f"  ! Closing odds non disponibili come feature ({e}); book_proba_p1 = NaN")
         return None
 
 
 def _book_winner_prob(index: dict, wkey: str, lkey: str, when) -> float | None:
-    """Implied prob (overround rimosso) del giocatore wkey, dalla quota piu' vicina."""
+    """Implied prob (overround removed) of player wkey, from the closest odds."""
     from odds_loader import implied_probs
     rows = index.get(frozenset((wkey, lkey)))
     if not rows:
@@ -164,33 +161,31 @@ def _book_winner_prob(index: dict, wkey: str, lkey: str, when) -> float | None:
 
 def _deterministic_swap(date: pd.Timestamp, match_num: object) -> bool:
     """
-    Decide in modo deterministico (e indipendente dall'esito) se mettere il
-    vincitore come p1 (False) o come p2 (True).
-    Usa hash di (date, match_num) modulo 2.
+    Decide deterministically (and independently of the outcome) whether to place
+    the winner as p1 (False) or as p2 (True).
+    Uses hash of (date, match_num) modulo 2.
     """
     key = f"{date.strftime('%Y%m%d')}_{match_num}_{RANDOM_SEED}"
     h = hashlib.md5(key.encode()).hexdigest()
     return int(h[:8], 16) % 2 == 1
 
 
-# ---------------------------------------------------------------------------
-# Stato dinamico (tutto pre-match)
-# ---------------------------------------------------------------------------
+# Dynamic state (all pre-match)
 class MatchState:
-    """Tutte le statistiche live aggiornate giorno per giorno."""
+    """All live statistics updated day by day."""
 
     def __init__(self):
         self.elo = EloSystem()
-        # ultime N vittorie (1) / sconfitte (0) per ogni giocatore
+        # last N wins (1) / losses (0) per player
         self.recent_results: dict[int, deque] = defaultdict(_new_form_deque)
-        # H2H: chiave = tupla ordinata (id_min, id_max), valore = (wins_min, wins_max)
+        # H2H: key = sorted tuple (id_min, id_max), value = (wins_min, wins_max)
         self.h2h: dict[tuple[int, int], list[int]] = defaultdict(_new_h2h)
-        # Minuti giocati negli ultimi 14 giorni (lista di tuple (data, minuti))
+        # minutes played in the last 14 days (list of (date, minutes) tuples)
         self.recent_load: dict[int, list[tuple[pd.Timestamp, float]]] = defaultdict(list)
-        # Ultimi N record raw di servizio/risposta per giocatore
+        # last N raw serve/return records per player
         self.serve_history: dict[int, deque] = defaultdict(_new_serve_deque)
 
-    # ----- read (PRE-match) -----
+    # read (PRE-match)
     def recent_form(self, pid: int) -> float:
         results = self.recent_results[pid]
         if not results:
@@ -203,7 +198,7 @@ class MatchState:
         total = wins[0] + wins[1]
         if total == 0:
             return 0.5
-        # Restituisce il winrate di pid_a
+        # Return the win rate of pid_a
         if pid_a == key[0]:
             return wins[0] / total
         return wins[1] / total
@@ -213,7 +208,7 @@ class MatchState:
         return sum(self.h2h[key])
 
     def serve_stats(self, pid: int) -> dict:
-        """Rates rolling di servizio/risposta (somma dei conteggi sulla finestra)."""
+        """Rolling serve/return rates (sum of counts over the window)."""
         hist = self.serve_history[pid]
         if not hist:
             return dict(SERVE_PRIORS)
@@ -236,20 +231,20 @@ class MatchState:
         }
 
     def update_serve(self, w_id: int, l_id: int, w_raw: dict | None, l_raw: dict | None) -> None:
-        """Aggiunge i record raw di servizio dopo il match (richiede entrambi i lati)."""
+        """Append the raw serve records after the match (requires both sides)."""
         if w_raw is None or l_raw is None:
             return
         self.serve_history[w_id].append(_serve_record(w_raw, l_raw))
         self.serve_history[l_id].append(_serve_record(l_raw, w_raw))
 
     def fatigue(self, pid: int, current_date: pd.Timestamp, window_days: int = 14) -> float:
-        """Minuti giocati negli ultimi `window_days`."""
+        """Minutes played in the last `window_days`."""
         cutoff = current_date - pd.Timedelta(days=window_days)
-        # Cleanup vecchi record per non far esplodere la memoria
+        # Drop old records to bound memory growth
         self.recent_load[pid] = [(d, m) for d, m in self.recent_load[pid] if d >= cutoff]
         return sum(m for _, m in self.recent_load[pid])
 
-    # ----- write (POST-match) -----
+    # write (POST-match)
     def update(
         self,
         winner_id: int,
@@ -258,7 +253,7 @@ class MatchState:
         date: pd.Timestamp,
         minutes: float | None,
     ) -> None:
-        # ELO (chiama la sua update)
+        # ELO (delegates to its own update)
         self.elo.update(winner_id, loser_id, surface)
         # Recent form
         self.recent_results[winner_id].append(1)
@@ -275,11 +270,9 @@ class MatchState:
             self.recent_load[loser_id].append((date, minutes))
 
 
-# ---------------------------------------------------------------------------
-# Pipeline principale
-# ---------------------------------------------------------------------------
+# Main pipeline
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Feature pre-match anti-leakage (delega a build_features_with_state)."""
+    """Anti-leakage pre-match features (delegates to build_features_with_state)."""
     return build_features_with_state(df)[0]
 
 
@@ -314,18 +307,18 @@ def main():
     odds_index = build_book_index()
     features, final_state = build_features_with_state(df, odds_index)
 
-    # Rimuovi burn-in
+    # Remove burn-in
     features = features[features["year"] > BURNIN_END_YEAR].reset_index(drop=True)
     print(f"  {len(features):,} match dopo burn-in (>{BURNIN_END_YEAR})")
 
     out_path = PROCESSED_DIR / "features.parquet"
     features.to_parquet(out_path, index=False)
 
-    # Salva stato finale (per predict.py)
+    # Save final state (for predict.py)
     state_path = PROCESSED_DIR / "final_state.pkl"
     joblib.dump(final_state, state_path)
 
-    # Salva mapping nome -> id (utile per predict.py)
+    # Save name -> id mapping (used by predict.py)
     name_map = {}
     for _, row in df.iterrows():
         name_map[row["winner_name"]] = int(row["winner_id"])
@@ -340,10 +333,10 @@ def main():
 
 
 def build_features_with_state(df: pd.DataFrame, odds_index: dict | None = None):
-    """Come build_features ma restituisce anche lo stato finale.
+    """Like build_features but also returns the final state.
 
-    Se odds_index e' fornito, aggiunge la feature `book_proba_p1` (implied prob
-    di p1 dalle closing odds, NaN dove non c'e' quota)."""
+    If odds_index is provided, adds the `book_proba_p1` feature (p1's implied
+    probability from the closing odds, NaN where no odds exist)."""
     assert df["tourney_date"].is_monotonic_increasing
     from odds_loader import sackmann_name_to_key
     state = MatchState()
@@ -415,18 +408,18 @@ def build_features_with_state(df: pd.DataFrame, odds_index: dict | None = None):
             "round_enc": _encode_round(row.round),
             "level_enc": _encode_level(row.tourney_level),
             "h2h_n": h2h_n,
-            # Necessari per il meta-model (parsing set-by-set):
+            # Required by the meta-model (set-by-set parsing):
             "match_num": row.match_num,
             "score": getattr(row, "score", ""),
         })
 
-        # Stat servizio/risposta rolling (assegnate secondo lo swap)
+        # Rolling serve/return stats (assigned according to the swap)
         p1_ss, p2_ss = (w_ss, l_ss) if not swap else (l_ss, w_ss)
         for m in SERVE_METRICS:
             features[f"p1_{m}"] = p1_ss[m]
             features[f"p2_{m}"] = p2_ss[m]
 
-        # Closing odds come feature (implied prob di p1, NaN se nessuna quota)
+        # Closing odds as a feature (p1's implied prob, NaN if no odds)
         bpp1 = np.nan
         if odds_index is not None:
             pw = _book_winner_prob(
@@ -436,7 +429,7 @@ def build_features_with_state(df: pd.DataFrame, odds_index: dict | None = None):
                 date,
             )
             if pw is not None:
-                # p1 e' il vincitore quando NON c'e' swap (criterio indipendente dall'esito)
+                # p1 is the winner when there is NO swap (criterion independent of the outcome)
                 bpp1 = pw if not swap else (1.0 - pw)
         features["book_proba_p1"] = bpp1
 

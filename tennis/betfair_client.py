@@ -1,18 +1,18 @@
 """
-Client minimale per Betfair Exchange API — SOLA LETTURA (odds live tennis).
-NON piazza scommesse (paper-trading). Per scommettere davvero servirebbe placeOrders,
-volutamente non implementato.
+Minimal client for the Betfair Exchange API — READ-ONLY (live tennis odds).
+Does NOT place bets (paper-trading). Real betting would require placeOrders,
+intentionally not implemented.
 
-Setup (una volta):
-  1. Account Betfair + iscrizione al Developer Program -> ottieni un Application Key:
-     https://developer.betfair.com/  (chiave "delayed" gratuita per i dati)
-  2. Esporta le credenziali come variabili d'ambiente (NON metterle nel codice):
-       export BF_APP_KEY="la-tua-app-key"
-       export BF_USERNAME="email-betfair"
-       export BF_PASSWORD="password-betfair"
-  3. Exchange italiano: endpoint identitysso.betfair.it (default sotto).
+Setup (once):
+  1. Betfair account + Developer Program registration -> get an Application Key:
+     https://developer.betfair.com/  (free "delayed" key for data)
+  2. Export the credentials as environment variables (do NOT put them in the code):
+       export BF_APP_KEY="your-app-key"
+       export BF_USERNAME="betfair-email"
+       export BF_PASSWORD="betfair-password"
+  3. Italian Exchange: identitysso.betfair.it endpoint (default below).
 
-Uso:
+Usage:
     from betfair_client import BetfairClient
     bf = BetfairClient(); bf.login()
     for m in bf.list_inplay_tennis():
@@ -75,7 +75,7 @@ class BetfairClient:
         return js["result"]
 
     def list_inplay_tennis(self) -> list[dict]:
-        """Mercati MATCH_ODDS del tennis attualmente IN-PLAY."""
+        """Tennis MATCH_ODDS markets currently IN-PLAY."""
         res = self._rpc("listMarketCatalogue", {
             "filter": {"eventTypeIds": [TENNIS_EVENT_TYPE_ID],
                        "inPlayOnly": True,
@@ -94,7 +94,7 @@ class BetfairClient:
         return out
 
     def best_back_prices(self, market_id: str) -> dict:
-        """selection_id -> miglior quota back disponibile (e size)."""
+        """selection_id -> best available back odds (and size)."""
         res = self._rpc("listMarketBook", {
             "marketIds": [market_id],
             "priceProjection": {"priceData": ["EX_BEST_OFFERS"]},

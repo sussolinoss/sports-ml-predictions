@@ -1,7 +1,7 @@
 """
-Stacking 2-livelli: 4 base learners + LR meta su val.
+2-level stacking: 4 base learners + LR meta on val.
 Base: CatBoost(decay), XGBC(decay), XGBRanker, TCN(prod stack).
-Meta: LR su [p_cat, p_xgc, p_xgr_norm, p_tcn] fit su val, valutato su test.
+Meta: LR on [p_cat, p_xgc, p_xgr_norm, p_tcn] fit on val, evaluated on test.
 """
 from __future__ import annotations
 

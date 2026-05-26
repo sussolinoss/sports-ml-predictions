@@ -1,7 +1,7 @@
 """
-1) CatBoost bagging ×20 seed (variance reduction puro)
-2) LogReg sanity baseline (segnale lineare)
-3) RandomForest (controllo gradient boosting vs bagging trees)
+1) CatBoost bagging x20 seeds (pure variance reduction)
+2) LogReg sanity baseline (linear signal)
+3) RandomForest (check gradient boosting vs bagging trees)
 """
 from __future__ import annotations
 

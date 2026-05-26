@@ -1,7 +1,7 @@
 """
-Loader del CSV strategy/pitstop fornito (Kaggle/FastF1-derived).
-Aggrega lap-by-lap per (year, race, driver) -> n_stops, avg_deg, used_soft.
-Mappa driver 3-letter -> Ergast driverId per merge con load_results.
+Loader for the provided strategy/pitstop CSV (Kaggle/FastF1-derived).
+Aggregates lap-by-lap by (year, race, driver) -> n_stops, avg_deg, used_soft.
+Maps 3-letter driver codes -> Ergast driverId to merge with load_results.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pandas as pd
 
 CSV = Path(__file__).resolve().parent / "data" / "f1" / "raw" / "pitstop" / "f1_strategy_dataset_v4.csv"
 
-# 3-letter abbr -> Ergast driverId (piloti 2022-2025)
+# 3-letter abbr -> Ergast driverId (2022-2025 drivers)
 ABBR_TO_ID = {
     "ALB": "albon", "ALO": "alonso", "ANT": "antonelli", "BEA": "bearman",
     "BOR": "bortoleto", "BOT": "bottas", "COL": "colapinto", "DEV": "de_vries",
@@ -28,8 +28,8 @@ ABBR_TO_ID = {
 
 def load_strategy_agg() -> pd.DataFrame:
     """Per (season, race, driver) -> n_stops, avg_deg, used_soft.
-    Le colonne sono race_name (non round) e driver_abbr.
-    Restituisce DataFrame con: season, race, driver_id, n_stops, avg_deg, used_soft.
+    The columns are race_name (not round) and driver_abbr.
+    Returns a DataFrame with: season, race, driver_id, n_stops, avg_deg, used_soft.
     """
     if not CSV.exists():
         return pd.DataFrame(columns=["season", "race", "driver_id", "n_stops",

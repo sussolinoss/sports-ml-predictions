@@ -1,7 +1,7 @@
 """
-Blend CatBoost binary prob + XGBRanker score (rank-normalized per gara).
-+ Mixture-of-experts: modello separato street vs permanent.
-Reuse build_features, no TCN per velocita'.
+Blend CatBoost binary probability + XGBRanker score (rank-normalized per race).
++ Mixture-of-experts: separate models for street vs permanent.
+Reuses build_features, no TCN for speed.
 """
 from __future__ import annotations
 

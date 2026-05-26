@@ -1,14 +1,14 @@
 """
-Confronto F1: modello podio SENZA meteo vs CON meteo.
+F1 comparison: podium model WITHOUT weather vs WITH weather.
 
-Prerequisito: aver costruito il meteo una volta ->  python -m fastf1_weather
+Prerequisite: build the weather data once ->  python -m fastf1_weather
 
-Misura precision@3 (podio) e precision@1 (vincitore) su una stagione held-out,
-con e senza le feature meteo. NB: 'is_wet' della gara corrente non e' nota pre-gara
-(serve un forecast); qui misura il valore POTENZIALE dell'informazione meteo
-(upper bound). 'driver_wet_form' invece e' anti-leakage.
+Measures precision@3 (podium) and precision@1 (winner) on a held-out season,
+with and without the weather features. Note: the current race's 'is_wet' is not
+known pre-race (a forecast is needed); here it measures the POTENTIAL value of
+weather information (upper bound). 'driver_wet_form' instead is anti-leakage.
 
-Uso:
+Usage:
     python -m f1_weather_eval --test 2025
 """
 
@@ -28,8 +28,8 @@ import f1_podium as F
 from f1_data import load_results
 from fastf1_weather import load_wet_map
 
-NOLEAK_COLS = F.FEATURE_COLS + ["driver_wet_form"]              # deployabile (anti-leakage)
-SCENARIO_COLS = F.FEATURE_COLS + ["is_wet", "driver_wet_form"]   # upper bound (richiede forecast)
+NOLEAK_COLS = F.FEATURE_COLS + ["driver_wet_form"]              # deployable (anti-leakage)
+SCENARIO_COLS = F.FEATURE_COLS + ["is_wet", "driver_wet_form"]   # upper bound (requires forecast)
 PARAMS = {"objective": "binary:logistic", "eval_metric": "logloss", "max_depth": 4,
           "learning_rate": 0.05, "subsample": 0.85, "colsample_bytree": 0.85,
           "min_child_weight": 5, "tree_method": "hist"}

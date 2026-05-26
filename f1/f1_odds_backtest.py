@@ -1,20 +1,20 @@
 """
-[USO SCIENTIFICO/PRIVATO] Il modello F1 batte il mercato scommesse?
+[SCIENTIFIC/PRIVATE USE] Does the F1 model beat the betting market?
 
-Ingerisce un CSV di quote storiche e misura, col rigore usato per il tennis,
-se scommettere sul podio secondo il modello genera ROI > 0 (con IC bootstrap).
+Ingests a CSV of historical odds and measures, with the rigour used for tennis,
+whether betting on the podium according to the model yields ROI > 0 (with bootstrap CI).
 
-NON e' un bot di scommesse: e' uno strumento di misura per documentare il risultato
-(senza pubblicare il modello). Mercati F1 liquidi sono efficienti: atteso ~0/negativo.
+It is NOT a betting bot: it is a measurement tool to document the result
+(without publishing the model). Liquid F1 markets are efficient: expected ~0/negative.
 
-CSV quote atteso (decimali), colonne: season, round, driver, odds
-  - driver = driverId Ergast (es. max_verstappen)
-  - odds   = quota decimale "finisce a podio" (o vittoria, vedi --target)
-Fonti possibili: Kaggle (storico), The Odds API motorsport_f1 (prospettico).
+Expected odds CSV (decimal), columns: season, round, driver, odds
+  - driver = Ergast driverId (e.g. max_verstappen)
+  - odds   = decimal odds "finishes on the podium" (or wins, see --target)
+Possible sources: Kaggle (historical), The Odds API motorsport_f1 (prospective).
 
-Uso:
+Usage:
     python -m f1_odds_backtest --odds quote.csv --min_edge 0.05 --bootstrap 10000
-    python -m f1_odds_backtest --sim          # demo con quote sintetiche (no file)
+    python -m f1_odds_backtest --sim          # demo with synthetic odds (no file)
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _bootstrap_roi(profit, stake, n=10000, seed=42):
 
 
 def _model_podium_proba(df):
-    """P(podio) per ogni (season,round,driver) col modello salvato + features pre-gara."""
+    """P(podium) for each (season,round,driver) using the saved model + pre-race features."""
     feat = F.build_features(df)
     model = xgb.Booster(); model.load_model(str(PROCESSED_DIR / "f1_podium.json"))
     p = model.predict(xgb.DMatrix(feat[F.FEATURE_COLS], feature_names=F.FEATURE_COLS))
@@ -89,7 +89,7 @@ def run(odds: pd.DataFrame, min_edge: float, n_boot: int):
 
 
 def _synthetic_odds(df, margin=0.08, seed=1):
-    """Quote sintetiche ~ prob podio reale storica + margine, per dimostrare la pipeline."""
+    """Synthetic odds ~ historical real podium probability + margin, to demonstrate the pipeline."""
     rng = np.random.default_rng(seed)
     base = df.groupby("driver")["podium"].mean().clip(0.02, 0.95)
     rows = []

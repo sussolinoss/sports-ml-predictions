@@ -1,4 +1,4 @@
-"""Best-seed selection: train 20 seed, scegli best su VAL precision@3, test honest."""
+"""Best-seed selection: train 20 seeds, pick the best on VAL precision@3, honest test."""
 from __future__ import annotations
 
 import sys

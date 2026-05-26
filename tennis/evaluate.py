@@ -1,12 +1,12 @@
 """
-Forward-testing settimanale/mensile.
+Weekly/monthly forward-testing.
 
-Carica il modello allenato, prende un range di date, e per ogni partita:
-  1) Genera la predizione pre-match
-  2) Confronta col risultato reale
-  3) Salva tutto in CSV per analisi successiva
+Loads the trained model, takes a date range, and for each match:
+  1) Generates the pre-match prediction
+  2) Compares it with the actual result
+  3) Saves everything to CSV for later analysis
 
-Output: data/forward_test.csv con una riga per partita.
+Output: data/forward_test.csv with one row per match.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def load_model_and_meta():
 
 
 def forward_test(start_date: str, end_date: str) -> pd.DataFrame:
-    """Predici tutti i match nell'intervallo, restituisci DataFrame con esiti."""
+    """Predict all matches in the range, return a DataFrame with outcomes."""
     features_path = PROCESSED_DIR / "features.parquet"
     df = pd.read_parquet(features_path)
     df["tourney_date"] = pd.to_datetime(df["tourney_date"])
@@ -58,7 +58,7 @@ def forward_test(start_date: str, end_date: str) -> pd.DataFrame:
     dmat = xgb.DMatrix(test_df[FEATURE_COLUMNS], feature_names=FEATURE_COLUMNS)
     proba = model.predict(dmat)
 
-    # Applica la calibrazione isotonica se presente (prob affidabili per l'edge)
+    # Apply isotonic calibration if present (reliable probabilities for the edge)
     cal_path = PROCESSED_DIR / "calibrator.pkl"
     if cal_path.exists():
         proba = joblib.load(cal_path).predict(proba)
@@ -71,26 +71,26 @@ def forward_test(start_date: str, end_date: str) -> pd.DataFrame:
     out["p1_proba"] = proba
     out["prediction"] = (proba > 0.5).astype(int)
     out["correct"] = (out["prediction"] == out["p1_wins"]).astype(int)
-    # Probabilità della scelta del modello (per analisi di confidenza)
+    # Probability of the model's choice (for confidence analysis)
     out["confidence"] = np.where(proba > 0.5, proba, 1 - proba)
     out["week"] = out["tourney_date"].dt.to_period("W-MON").astype(str)
     return out
 
 
 def summarize(df: pd.DataFrame) -> None:
-    """Stampa accuratezza settimanale + globale + per superficie + per confidenza."""
+    """Print weekly + overall + per-surface + per-confidence accuracy."""
     print(f"\n{'='*60}")
     print(f"Forward test: {df['tourney_date'].min().date()} -> {df['tourney_date'].max().date()}")
     print(f"Match totali: {len(df)}")
     print(f"{'='*60}")
 
-    # Globale
+    # Overall
     acc = df["correct"].mean()
     ll = log_loss(df["p1_wins"], df["p1_proba"].clip(1e-6, 1 - 1e-6))
     bs = brier_score_loss(df["p1_wins"], df["p1_proba"])
     print(f"\nGLOBALE:  acc={acc:.4f}  logloss={ll:.4f}  brier={bs:.4f}")
 
-    # Per settimana
+    # By week
     print(f"\nACCURATEZZA SETTIMANALE:")
     weekly = df.groupby("week").agg(
         n=("correct", "size"),
@@ -101,13 +101,13 @@ def summarize(df: pd.DataFrame) -> None:
         print(f"  {row['week']:25s}  n={int(row['n']):4d}  acc={row['acc']:.4f}  "
               f"avg_conf={row['avg_conf']:.3f}")
 
-    # Per superficie
+    # By surface
     print(f"\nACCURATEZZA PER SUPERFICIE:")
     by_surf = df.groupby("surface").agg(n=("correct", "size"), acc=("correct", "mean"))
     for surf, row in by_surf.iterrows():
         print(f"  {surf:10s}  n={int(row['n']):4d}  acc={row['acc']:.4f}")
 
-    # Per livello di confidenza (calibrazione informale)
+    # By confidence level (informal calibration)
     print(f"\nACCURATEZZA PER LIVELLO DI CONFIDENZA:")
     bins = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     df["conf_bin"] = pd.cut(df["confidence"], bins=bins, include_lowest=True)

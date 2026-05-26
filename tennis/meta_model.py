@@ -1,26 +1,26 @@
 """
-Meta-modello con stacking Out-of-Fold (OOF) — versione PRE-MATCH ONLY.
+Meta-model with Out-of-Fold (OOF) stacking — PRE-MATCH ONLY version.
 
-ARCHITETTURA (tutto pre-match, niente stato live):
+ARCHITECTURE (all pre-match, no live state):
 
-    Predittore A: XGBoost pre-match (su tutte le feature) ---\\
-                                                              >--> Meta-modello --> P(p1 vince)
-    Predittore B: probabilita' ELO (logistica su elo_diff) --/
+    Predictor A: pre-match XGBoost (on all features) ---\\
+                                                          >--> Meta-model --> P(p1 wins)
+    Predictor B: ELO probability (logistic on elo_diff) --/
 
-REGOLA D'ORO ANTI-LEAKAGE (Out-of-Fold):
-  Il meta-modello DEVE essere allenato su predizioni "oneste" del Predittore A:
-  predizioni fatte da un modello che NON ha mai visto quei dati in training.
-  Soluzione: K-fold sui dati di training. Per ogni fold k, alleniamo l'XGBoost
-  sugli ALTRI fold e prediciamo sul fold k. Concatenando otteniamo OOF onesti.
+ANTI-LEAKAGE GOLDEN RULE (Out-of-Fold):
+  The meta-model MUST be trained on "honest" predictions from Predictor A:
+  predictions made by a model that has NEVER seen that data during training.
+  Solution: K-fold on the training data. For each fold k, train XGBoost on the
+  OTHER folds and predict on fold k. Concatenating gives honest OOF predictions.
 
-NB: questa versione NON usa snapshot set-by-set ne' Markov live. Serve a
-dimostrare il valore (eventuale) dello stacking di predittori pre-match.
-Se vuoi la versione in-play, vedi la cronologia git / live_update.py.
+Note: this version does NOT use set-by-set snapshots or a live Markov model. It
+exists to demonstrate the (possible) value of stacking pre-match predictors.
+For the in-play version, see the git history / live_update.py.
 
-USO:
+USAGE:
     python -m meta_model
 
-Genera meta_model_lr.pkl, meta_model_xgb.pkl, base_model_for_meta.json in data/processed/.
+Generates meta_model_lr.pkl, meta_model_xgb.pkl, base_model_for_meta.json in data/processed/.
 """
 
 from __future__ import annotations
@@ -51,20 +51,20 @@ from feature_engineering import FEATURE_COLUMNS
 
 
 # ---------------------------------------------------------------------------
-# Predittore B: probabilita' ELO (closed-form)
+# Predictor B: ELO probability (closed-form)
 # ---------------------------------------------------------------------------
 def elo_diff_to_proba(elo_diff: float) -> float:
-    """ELO -> P(p1 vince) con la formula logistica standard."""
+    """ELO -> P(p1 wins) using the standard logistic formula."""
     return 1.0 / (1.0 + 10.0 ** (-elo_diff / 400.0))
 
 
 # ---------------------------------------------------------------------------
-# OOF predictions sul training set
+# OOF predictions on the training set
 # ---------------------------------------------------------------------------
 def generate_oof_predictions(train_df: pd.DataFrame, n_splits: int = 5) -> np.ndarray:
     """
-    K-fold OOF: ogni riga ottiene una predizione fatta da un modello
-    addestrato sulle altre righe. Predizioni "oneste" per il meta-modello.
+    K-fold OOF: each row gets a prediction made by a model trained on the
+    other rows. "Honest" predictions for the meta-model.
     """
     X = train_df[FEATURE_COLUMNS].values
     y = train_df["p1_wins"].values
@@ -87,12 +87,12 @@ def generate_oof_predictions(train_df: pd.DataFrame, n_splits: int = 5) -> np.nd
         )
         oof[va_idx] = model.predict(dva)
 
-    assert not np.isnan(oof).any(), "OOF incompleto - bug nel K-fold"
+    assert not np.isnan(oof).any(), "OOF incomplete - bug in K-fold"
     return oof
 
 
 def train_final_base_model(train_df: pd.DataFrame, val_df: pd.DataFrame) -> xgb.Booster:
-    """Modello base finale su TUTTO il training set, per predire val e test."""
+    """Final base model on the ENTIRE training set, to predict val and test."""
     params = XGB_PARAMS.copy()
     n_estimators = params.pop("n_estimators")
     dtr = xgb.DMatrix(train_df[FEATURE_COLUMNS], label=train_df["p1_wins"],
@@ -109,13 +109,13 @@ def train_final_base_model(train_df: pd.DataFrame, val_df: pd.DataFrame) -> xgb.
 
 
 META_FEATURES = [
-    "pre_pred",    # output del Predittore A (OOF in training, modello finale in val/test)
-    "elo_proba",   # output del Predittore B (logistica su elo_diff)
+    "pre_pred",    # output of Predictor A (OOF in training, final model in val/test)
+    "elo_proba",   # output of Predictor B (logistic on elo_diff)
 ]
 
 
 def _add_meta_features(df: pd.DataFrame, pre_pred: np.ndarray) -> pd.DataFrame:
-    """Aggiunge le colonne meta (pre_pred, elo_proba) al DataFrame."""
+    """Add the meta columns (pre_pred, elo_proba) to the DataFrame."""
     out = df.copy()
     out["pre_pred"] = pre_pred
     out["elo_proba"] = elo_diff_to_proba(out["elo_diff"].values)
@@ -123,7 +123,7 @@ def _add_meta_features(df: pd.DataFrame, pre_pred: np.ndarray) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline principale
+# Main pipeline
 # ---------------------------------------------------------------------------
 def main():
     features_path = PROCESSED_DIR / "features.parquet"
@@ -133,20 +133,20 @@ def main():
     df = pd.read_parquet(features_path)
     print(f"Caricato features.parquet: {len(df):,} match")
 
-    # Split temporale (lo stesso di train_model.py)
+    # Temporal split (same as train_model.py)
     y = df["year"]
     train_df = df[(y > BURNIN_END_YEAR) & (y <= TRAIN_END_YEAR)].reset_index(drop=True)
     val_df = df[(y > TRAIN_END_YEAR) & (y <= VAL_END_YEAR)].reset_index(drop=True)
     test_df = df[(y > VAL_END_YEAR) & (y <= TEST_END_YEAR)].reset_index(drop=True)
     print(f"  train={len(train_df):,}  val={len(val_df):,}  test={len(test_df):,}")
 
-    # STEP 1: OOF predictions sul training (K-fold)
+    # STEP 1: OOF predictions on the training set (K-fold)
     print("\n[1/3] Genero predizioni OOF sul training (5-fold)...")
     oof = generate_oof_predictions(train_df, n_splits=5)
     oof_acc = ((oof > 0.5) == train_df["p1_wins"].values).mean()
     print(f"  Accuracy OOF (proxy della performance reale): {oof_acc:.4f}")
 
-    # STEP 2: Modello base finale su tutto il training set
+    # STEP 2: Final base model on the entire training set
     print("\n[2/3] Alleno modello base finale su tutto il training...")
     base_model = train_final_base_model(train_df, val_df)
     print(f"  Best iter: {base_model.best_iteration}")
@@ -162,7 +162,7 @@ def main():
     val_meta = _add_meta_features(val_df, val_pre)
     test_meta = _add_meta_features(test_df, test_pre)
 
-    # STEP 3: Allena meta-modelli
+    # STEP 3: Train meta-models
     print("\n[3/3] Alleno meta-modelli (stacking pre-match)...")
     X_meta_tr = train_meta[META_FEATURES].values
     y_meta_tr = train_meta["p1_wins"].values
@@ -187,7 +187,7 @@ def main():
     )
     print(f"  XGBoost best_iter: {meta_xgb.best_iteration}")
 
-    # Valutazione
+    # Evaluation
     print("\n" + "=" * 70)
     print("RISULTATI (pre-match)")
     print("=" * 70)
@@ -221,7 +221,7 @@ def main():
             if name == "TEST" and label == "Meta — XGBoost":
                 meta_test_acc = acc
 
-    # Verdetto onesto: lo stacking serve?
+    # Honest verdict: is stacking worthwhile?
     if base_test_acc is not None and len(test_meta) > 0:
         delta = (meta_test_acc - base_test_acc) * 100
         print("\n" + "-" * 70)
@@ -234,7 +234,7 @@ def main():
                   "tieni il solo XGBoost base.")
         print("-" * 70)
 
-    # Salvataggio
+    # Save
     joblib.dump(meta_lr, PROCESSED_DIR / "meta_model_lr.pkl")
     joblib.dump(meta_xgb, PROCESSED_DIR / "meta_model_xgb.pkl")
     base_model.save_model(str(PROCESSED_DIR / "base_model_for_meta.json"))
@@ -245,12 +245,12 @@ def main():
 
 
 # ---------------------------------------------------------------------------
-# API per inferenza pre-match
+# API for pre-match inference
 # ---------------------------------------------------------------------------
 def predict_with_meta(pre_pred: float, elo_proba: float, use_xgb: bool = True) -> float:
     """
-    Combina pre-match XGBoost (pre_pred) e probabilita' ELO (elo_proba) col
-    meta-modello allenato, restituisce P(p1 vince).
+    Combine pre-match XGBoost (pre_pred) and ELO probability (elo_proba) with
+    the trained meta-model, returning P(p1 wins).
     """
     suffix = "xgb" if use_xgb else "lr"
     meta = joblib.load(PROCESSED_DIR / f"meta_model_{suffix}.pkl")

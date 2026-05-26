@@ -1,6 +1,6 @@
 """
-Modello P(vince campionato costruttori) mid-season rolling, calibrato softmax+T.
-Dataset Ergast 1958+ (inizio coppa costruttori).
+Mid-season rolling model for P(wins constructors championship), softmax+T calibrated.
+Ergast dataset 1958+ (start of the constructors cup).
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from f1_data import PROCESSED_DIR, load_results
 
 
 def build_con_dataset(df: pd.DataFrame, min_round: int = 3) -> pd.DataFrame:
-    """Per ogni (season, round_N >= min_round, constructor_attivo): feat + label campione."""
+    """For each (season, round_N >= min_round, active constructor): features + champion label."""
     df = df.sort_values(["season", "round", "driver"]).reset_index(drop=True)
-    # punti per (season, round, constructor) = somma punti dei 2 piloti
+    # points per (season, round, constructor) = sum of the 2 drivers' points
     sea_con = df.groupby(["season", "round", "constructor"], as_index=False).agg(
         race_pts=("points", "sum"),
         race_pod=("podium", "sum"),
@@ -38,10 +38,10 @@ def build_con_dataset(df: pd.DataFrame, min_round: int = 3) -> pd.DataFrame:
     total_rounds = df.groupby("season")["round"].max().rename("total_rounds")
     cur_season = int(df["season"].max())
     if total_rounds.loc[cur_season] < 18:
-        total_rounds.loc[cur_season] = 24  # stima calendario in corso
+        total_rounds.loc[cur_season] = 24  # estimate for the ongoing calendar
     sea_con = sea_con.merge(total_rounds, on="season")
 
-    # campione costruttori per season = max pts_after a fine stagione
+    # constructors champion per season = max pts_after at season end
     last = sea_con[sea_con["round"] == sea_con["total_rounds"]] \
         .groupby(["season", "constructor"])["pts_after"].max().reset_index()
     champs = last.sort_values(["season", "pts_after"], ascending=[True, False]) \
@@ -61,7 +61,7 @@ def build_con_dataset(df: pd.DataFrame, min_round: int = 3) -> pd.DataFrame:
         if rnd < min_round:
             continue
         tot = int(g["total_rounds"].iloc[0])
-        # leader pts: max pts_after fra constructor in season fino rnd
+        # leader pts: max pts_after among constructors in the season up to rnd
         sea = sea_con[(sea_con.season == season) & (sea_con["round"] <= rnd)]
         cur = sea.groupby("constructor", as_index=False)["pts_after"].max()
         leader_pts = cur["pts_after"].max()
@@ -80,9 +80,9 @@ def build_con_dataset(df: pd.DataFrame, min_round: int = 3) -> pd.DataFrame:
         snap["pts_per_race"] = snap["pts_now"] / snap["races_now"].clip(lower=1)
         snap["frac_round"] = rnd / tot
         snap["rounds_remaining"] = tot - rnd
-        snap["max_pts_remaining"] = snap["rounds_remaining"] * 43  # max 25+18 per gara
+        snap["max_pts_remaining"] = snap["rounds_remaining"] * 43  # max 25+18 per race
         snap["math_possible"] = (snap["pts_now"] + snap["max_pts_remaining"] >= leader_pts).astype(int)
-        # momentum_3: pts ultime 3 gare per constructor
+        # momentum_3: pts over the last 3 races per constructor
         last3 = sea_con[(sea_con.season == season) & (sea_con["round"] >= rnd - 2)
                         & (sea_con["round"] <= rnd)].groupby("constructor")["race_pts"].sum()
         snap["momentum_3"] = snap["constructor"].map(last3).fillna(0) / 129.0  # max 3*43

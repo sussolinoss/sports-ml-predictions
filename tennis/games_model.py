@@ -1,18 +1,18 @@
 """
-Modello per scommesse OVER/UNDER games e HANDICAP games (non "chi vince").
+Model for OVER/UNDER games and HANDICAP games betting (not "who wins").
 
-Le quote 1X2 sono efficientissime; over/under e handicap games lo sono meno.
-Qui simuliamo il match punto-punto (Monte Carlo) dalla forza al servizio dei due
-giocatori (p_serve dalle stat rolling del modello) e otteniamo la distribuzione del
-TOTALE game e del margine game -> P(over linea), P(handicap coperto).
+1X2 odds are highly efficient; over/under and handicap games are less so. Here
+we simulate the match point-by-point (Monte Carlo) from the two players' serve
+strength (p_serve from the model's rolling stats) and obtain the distribution of
+TOTAL games and game margin -> P(over line), P(handicap covered).
 
-LIMITE: tennis-data.co.uk NON ha quote storiche over/under/handicap -> questo NON e'
-backtestabile gratis (come l'in-play). Si usa in paper-trading contro quote live
-(The Odds API markets 'totals'/'spreads' quando disponibili).
+LIMITATION: tennis-data.co.uk has NO historical over/under/handicap odds -> this
+is NOT backtestable for free (like in-play). It is used in paper-trading against
+live odds (The Odds API 'totals'/'spreads' markets when available).
 
-USO:
+USAGE:
     python -m games_model --p1 "Carlos Alcaraz" --p2 "Jannik Sinner" --best_of 3
-    python -m games_model --pa 0.66 --pb 0.63 --best_of 5      # p_serve diretti
+    python -m games_model --pa 0.66 --pb 0.63 --best_of 5      # direct p_serve
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def _sim_tiebreak(pa: float, pb: float, a_serves_first: bool, rng: random.Random) -> bool:
-    """True se A vince il tiebreak. Servizio: 1 punto A, poi 2 a testa."""
+    """True if A wins the tiebreak. Serve: 1 point A, then 2 each."""
     i = j = 0
     a_serving = a_serves_first
     n = 0
@@ -39,13 +39,13 @@ def _sim_tiebreak(pa: float, pb: float, a_serves_first: bool, rng: random.Random
         else:
             j += 1
         n += 1
-        if n % 2 == 1:  # cambio servizio dopo punti dispari (1,3,5,...)
+        if n % 2 == 1:  # change serve after odd points (1,3,5,...)
             a_serving = not a_serving
     return i > j
 
 
 def _sim_set(pa: float, pb: float, a_serves_first: bool, rng: random.Random):
-    """Simula un set, ritorna (games_a, games_b, a_won)."""
+    """Simulate a set, return (games_a, games_b, a_won)."""
     ga = gb = 0
     srv_a = a_serves_first
     while True:
@@ -90,7 +90,7 @@ def _sim_match(pa: float, pb: float, best_of: int, rng: random.Random):
 
 
 def simulate(pa: float, pb: float, best_of: int = 3, n: int = 20000, seed: int = 42):
-    """Ritorna (totali_game, margini_game=A-B) su n simulazioni."""
+    """Return (game_totals, game_margins=A-B) over n simulations."""
     rng = random.Random(seed)
     totals, margins = [], []
     for _ in range(n):
@@ -105,7 +105,7 @@ def p_over(totals, line: float) -> float:
 
 
 def p_handicap(margins, line: float) -> float:
-    """P(A copre l'handicap): A - B + line > 0 (line negativa = A favorito che da' game)."""
+    """P(A covers the handicap): A - B + line > 0 (negative line = favored A giving games)."""
     return sum(1 for m in margins if m + line > 0) / len(margins)
 
 

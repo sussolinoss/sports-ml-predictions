@@ -1,4 +1,4 @@
-"""CatBoost(decay) multi-seed AVG prob (no TCN)."""
+"""CatBoost(decay) multi-seed averaged probabilities (no TCN)."""
 from __future__ import annotations
 
 import sys

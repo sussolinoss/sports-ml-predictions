@@ -1,4 +1,4 @@
-"""TCN ablation con decay attivo. 10 seed CatBoost, riusa TCN salvato."""
+"""TCN ablation with decay active. 10 CatBoost seeds, reuses the saved TCN."""
 from __future__ import annotations
 
 import sys

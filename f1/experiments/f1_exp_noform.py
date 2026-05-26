@@ -1,4 +1,4 @@
-"""Multi-seed: 25 feat full vs 19 feat no-form. Decay tau=1.5."""
+"""Multi-seed: 25-feature full vs 19-feature no-form. Decay tau=1.5."""
 from __future__ import annotations
 
 import sys

@@ -1,4 +1,4 @@
-"""Fine scan tau decay con TCN p_tcn incluso (production stack)."""
+"""Fine scan of decay tau with TCN p_tcn included (production stack)."""
 from __future__ import annotations
 
 import sys

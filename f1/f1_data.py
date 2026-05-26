@@ -1,11 +1,11 @@
 """
-Dati F1 da Ergast (mirror jolpica-f1, gratis, niente install).
-Scarica i risultati gara per stagione e li carica in un DataFrame ordinato.
+F1 data from Ergast (jolpica-f1 mirror, free, no install).
+Downloads race results per season and loads them into a sorted DataFrame.
 
-Cache: data/f1/raw/results_{anno}.json
+Cache: data/f1/raw/results_{year}.json
 
-Uso:
-    python -m f1_data            # scarica le stagioni configurate e stampa un riepilogo
+Run:
+    python -m f1_data            # download the configured seasons and print a summary
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ HEADERS = {"User-Agent": "f1-podium-model"}
 
 
 def _get(url, params, timeout=30, retries=4):
-    """GET con retry su 429 (rate limit): sleep esponenziale 5s,15s,45s,120s."""
+    """GET with retry on 429 (rate limit): exponential sleep 5s,15s,45s,120s."""
     delay = 5
     for attempt in range(retries + 1):
         r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
@@ -45,7 +45,7 @@ def _get(url, params, timeout=30, retries=4):
 
 
 def _fetch_season_raw(year: int) -> list[dict]:
-    """Tutti i risultati della stagione (paginati a 100), come righe flat."""
+    """All season results (paginated by 100), as flat rows."""
     rows, offset, total = [], 0, 1
     while offset < total:
         r = _get(f"{BASE}/{year}/results/",
@@ -82,7 +82,7 @@ def _fetch_season_raw(year: int) -> list[dict]:
                     "fl_rank": int(fl["rank"]) if fl.get("rank") else None,
                 })
         offset += 100
-        time.sleep(0.3)  # gentile con l'API
+        time.sleep(0.3)  # be gentle with the API
     return rows
 
 
@@ -109,7 +109,7 @@ def _time_to_ms(t: str):
 
 
 def _fetch_quali_raw(year: int) -> list[dict]:
-    """Miglior tempo di qualifica per pilota (min tra Q1/Q2/Q3)."""
+    """Best qualifying time per driver (min of Q1/Q2/Q3)."""
     rows, offset, total = [], 0, 1
     while offset < total:
         r = _get(f"{BASE}/{year}/qualifying/",
@@ -141,8 +141,8 @@ def download_quali(year: int, overwrite: bool = False) -> Path:
 
 
 def fetch_round_quali(year: int, rnd: int) -> dict | None:
-    """Qualifiche di un round (anche futuro, una volta disputate): entry + griglia + tempi.
-    Ritorna {circuit, date, rows:[{driver, constructor, grid, best_ms}]} o None."""
+    """Qualifying for a round (including a future one, once held): entry + grid + times.
+    Returns {circuit, date, rows:[{driver, constructor, grid, best_ms}]} or None."""
     r = requests.get(f"{BASE}/{year}/{rnd}/qualifying/",
                      params={"limit": 100}, timeout=30)
     r.raise_for_status()
@@ -164,7 +164,7 @@ def fetch_round_quali(year: int, rnd: int) -> dict | None:
 
 
 def load_quali(years=None) -> pd.DataFrame:
-    """[season, round, driver, quali_gap_ms] = distacco dal pole della stessa gara."""
+    """[season, round, driver, quali_gap_ms] = gap to the pole of the same race."""
     years = years or SEASONS
     frames = []
     for y in years:
@@ -177,15 +177,15 @@ def load_quali(years=None) -> pd.DataFrame:
         return pd.DataFrame(columns=["season", "round", "driver", "quali_gap_ms"])
     q = pd.concat(frames, ignore_index=True).dropna(subset=["best_ms"])
     if "quali_position" not in q.columns:
-        q["quali_position"] = float("nan")    # cache vecchia: re-download per riempirla
+        q["quali_position"] = float("nan")    # old cache: re-download to fill it in
     q["pole_ms"] = q.groupby(["season", "round"])["best_ms"].transform("min")
     q["quali_gap_ms"] = q["best_ms"] - q["pole_ms"]
     return q[["season", "round", "driver", "quali_gap_ms", "best_ms", "quali_position"]]
 
 
 def _teammate_gap(df: pd.DataFrame) -> pd.Series:
-    """Per ogni pilota: best_ms - miglior best_ms dei COMPAGNI (stessa scuderia/gara).
-    Negativo = piu' veloce del compagno. NaN se senza compagno o senza tempo."""
+    """Per driver: best_ms - best best_ms of TEAMMATES (same constructor/race).
+    Negative = faster than the teammate. NaN if no teammate or no time."""
     out = pd.Series(float("nan"), index=df.index)
     for _, idx in df.groupby(["season", "round", "constructor"]).groups.items():
         bests = df.loc[idx, "best_ms"]
@@ -198,7 +198,7 @@ def _teammate_gap(df: pd.DataFrame) -> pd.Series:
 
 
 def _fetch_sprint_raw(year: int) -> list[dict]:
-    """Risultati sprint della stagione (vuoto se la stagione non ha sprint)."""
+    """Season sprint results (empty if the season has no sprints)."""
     rows, offset, total = [], 0, 1
     while offset < total:
         r = _get(f"{BASE}/{year}/sprint/",
@@ -229,7 +229,7 @@ def download_sprint(year: int, overwrite: bool = False) -> Path:
 
 
 def _fetch_standings_raw(year: int, max_round: int = 25) -> list[dict]:
-    """Classifica piloti dopo OGNI round della stagione."""
+    """Driver standings after EVERY round of the season."""
     rows = []
     for rnd in range(1, max_round + 1):
         r = _get(f"{BASE}/{year}/{rnd}/driverStandings/",
@@ -261,7 +261,7 @@ def download_standings(year: int, overwrite: bool = False) -> Path:
 
 
 def load_standings(years=None) -> pd.DataFrame:
-    """[season, round, driver, champ_pos, champ_pts] = standings DOPO quel round."""
+    """[season, round, driver, champ_pos, champ_pts] = standings AFTER that round."""
     years = years or SEASONS
     frames = []
     for y in years:
@@ -276,7 +276,7 @@ def load_standings(years=None) -> pd.DataFrame:
 
 
 def _fetch_pitstops_raw(year: int, max_round: int = 25) -> list[dict]:
-    """Pit stop per round della stagione (duration in ms)."""
+    """Pit stops per round of the season (duration in ms)."""
     rows = []
     for rnd in range(1, max_round + 1):
         r = _get(f"{BASE}/{year}/{rnd}/pitstops/", params={"limit": 200}, timeout=30)
@@ -310,7 +310,7 @@ def download_pitstops(year: int, overwrite: bool = False) -> Path:
 
 
 def load_pitstops(years=None) -> pd.DataFrame:
-    """Aggrega per (season, round, driver): n_stops, avg, min duration."""
+    """Aggregate by (season, round, driver): n_stops, avg, min duration."""
     years = years or SEASONS
     frames = []
     for y in years:
@@ -371,25 +371,25 @@ def load_results(years=None) -> pd.DataFrame:
     if not frames:
         raise RuntimeError("Nessun dato F1. Esegui download_all() prima.")
     df = pd.concat(frames, ignore_index=True)
-    # Cache vecchia priva di colonne nuove: aggiungi NaN
+    # Old cache missing new columns: add as NaN
     for c in ["race_time_ms", "fl_speed_kph", "fl_rank"]:
         if c not in df.columns:
             df[c] = float("nan")
-    # Gap tempo dal vincitore per gara (winner_time = min race_time_ms)
+    # Time gap to the winner per race (winner_time = min race_time_ms)
     df["winner_time_ms"] = df.groupby(["season", "round"])["race_time_ms"].transform("min")
     df["time_gap_ms"] = df["race_time_ms"] - df["winner_time_ms"]
     df["date"] = pd.to_datetime(df["date"])
-    # DNF / non classificati: positionText non numerico (R, W, D, E, F, N)
+    # DNF / not classified: non-numeric positionText (R, W, D, E, F, N)
     df["finished"] = df["status"].str.contains("Finished", na=False) | \
         df["status"].str.contains(r"\+\d+ Lap", regex=True, na=False)
     df["podium"] = (df["position"] <= 3).astype(int)
-    # eta' pilota alla gara (anni)
+    # driver age at the race (years)
     if "driver_dob" in df.columns:
         dob = pd.to_datetime(df["driver_dob"], errors="coerce")
         df["age_years"] = ((df["date"] - dob).dt.days / 365.25).round(2)
     else:
         df["age_years"] = float("nan")
-    # home race: nazionalita' pilota matcha il paese della gara (cheap binary)
+    # home race: driver nationality matches the race country (cheap binary)
     NAT_TO_CTRY = {"British": "UK", "Italian": "Italy", "Dutch": "Netherlands",
                    "Spanish": "Spain", "French": "France", "German": "Germany",
                    "Mexican": "Mexico", "Brazilian": "Brazil", "Australian": "Australia",
@@ -403,8 +403,8 @@ def load_results(years=None) -> pd.DataFrame:
                            == df["country"]).astype(int)
     else:
         df["home_race"] = 0
-    # merge standings: per ogni riga prendo la classifica DOPO il round PRECEDENTE
-    # (pre-gara, anti-leakage). NaN per round 1 (no previous nello stesso anno).
+    # merge standings: for each row take the standings AFTER the PREVIOUS round
+    # (pre-race, anti-leakage). NaN for round 1 (no previous in the same year).
     st = load_standings(years)
     if len(st):
         st_prev = st.rename(columns={"round": "_st_round"}).assign(round=lambda d: d["_st_round"] + 1)
@@ -412,26 +412,26 @@ def load_results(years=None) -> pd.DataFrame:
         df = df.merge(st_prev, on=["season", "round", "driver"], how="left")
     else:
         df["champ_pos"] = float("nan"); df["champ_pts"] = float("nan")
-    # merge gap qualifica (pre-gara, no leakage); NaN dove manca
+    # merge qualifying gap (pre-race, no leakage); NaN where missing
     q = load_quali(years)
     if len(q):
         df = df.merge(q, on=["season", "round", "driver"], how="left")
         df["teammate_gap_ms"] = _teammate_gap(df)
-        # Penalita' in griglia = grid - quali_position (positivo = arretrato per penalita')
+        # Grid penalty = grid - quali_position (positive = moved back by a penalty)
         df["grid_penalty"] = (df["grid"] - df["quali_position"]).fillna(0)
         df = df.drop(columns=["best_ms"])
     else:
         df["quali_gap_ms"] = float("nan")
         df["teammate_gap_ms"] = float("nan")
         df["grid_penalty"] = 0.0
-    # merge sprint (pre-gara: sprint corre sabato, gara domenica); NaN se no sprint quel weekend
+    # merge sprint (pre-race: sprint runs Saturday, race Sunday); NaN if no sprint that weekend
     sp = load_sprint(years)
     if len(sp):
         df = df.merge(sp, on=["season", "round", "driver"], how="left")
     else:
         df["sprint_position"] = float("nan")
         df["sprint_points"] = float("nan")
-    # merge strategia CSV (race-day, rolling) + PitStops-main (tempo stazionario crew)
+    # merge CSV strategy (race-day, rolling) + PitStops-main (crew stationary time)
     try:
         from f1_pitstop_csv import load_strategy_agg
         sa = load_strategy_agg()
@@ -453,7 +453,7 @@ def load_results(years=None) -> pd.DataFrame:
     else:
         for c in ("pit_min_s", "pit_avg_s", "pit_n"):
             df[c] = float("nan")
-    # === KAGGLE: standings full coverage (anti-leakage: round-1 = pre-gara) + chaos rate
+    # === KAGGLE: standings full coverage (anti-leakage: round-1 = pre-race) + chaos rate
     try:
         from f1_kaggle_data import load_driver_standings_full, load_circuit_chaos_rate
         kst = load_driver_standings_full()

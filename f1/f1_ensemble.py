@@ -1,10 +1,10 @@
 """
-Ensemble + stacking OOF sul podio F1.
+Ensemble + OOF stacking on the F1 podium.
 
-Base models: XGBoost (default), LightGBM (se disponibile), LogisticRegression.
-Combinazioni: media semplice e stacking OOF con meta-LogReg.
+Base models: XGBoost (default), LightGBM (if available), LogisticRegression.
+Combinations: simple average and OOF stacking with a meta-LogReg.
 
-Uso:  python -m f1_ensemble --test 2025
+Usage:  python -m f1_ensemble --test 2025
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ except ImportError:
 
 SEED = 42
 import os
-USE_GPU = os.environ.get("F1_GPU", "1") == "1"   # F1_GPU=0 per forzare CPU
+USE_GPU = os.environ.get("F1_GPU", "1") == "1"   # F1_GPU=0 to force CPU
 XGB_PARAMS = {"objective": "binary:logistic", "eval_metric": "logloss",
               "max_depth": 4, "learning_rate": 0.05, "subsample": 0.85,
               "colsample_bytree": 0.85, "min_child_weight": 5, "tree_method": "hist",
@@ -150,9 +150,9 @@ def main():
             oof[name][i_va] = f(Xtr[i_va])
         print(f"  fold {fi}/5 done")
 
-    # meta-LogReg sulle OOF -> apprende i pesi
+    # meta-LogReg on the OOF predictions -> learns the weights
     X_meta_tr = np.column_stack([oof[n] for n, _ in BASES])
-    X_meta_te = np.column_stack([test_preds[n] for n, _ in BASES])  # gia' calibrate
+    X_meta_te = np.column_stack([test_preds[n] for n, _ in BASES])  # already calibrated
     meta = LogisticRegression(max_iter=500, C=1.0, random_state=SEED).fit(X_meta_tr, ytr)
     te["p_stack"] = meta.predict_proba(X_meta_te)[:, 1]
     print(f"\n  STACKING meta-LR  test prec@3 {_prec3(te, 'p_stack'):.4f}  "

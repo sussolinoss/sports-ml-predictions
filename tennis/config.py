@@ -1,80 +1,65 @@
 """
-Configurazione centrale del progetto.
-Modifica qui anni, parametri ELO, split temporali.
+Central project configuration.
+Edit years, ELO parameters, and temporal splits here.
 """
 
 import os
 from datetime import date
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Tour: ATP (default) o WTA. Scegli con  TENNIS_TOUR=wta python ...
-# ---------------------------------------------------------------------------
+# Tour: ATP (default) or WTA. Select with  TENNIS_TOUR=wta python ...
 TOUR = os.environ.get("TENNIS_TOUR", "atp").lower()
-assert TOUR in ("atp", "wta"), "TENNIS_TOUR deve essere 'atp' o 'wta'"
+assert TOUR in ("atp", "wta"), "TENNIS_TOUR must be 'atp' or 'wta'"
 
-# ---------------------------------------------------------------------------
-# Percorsi (artefatti separati per tour; CSV grezzi condivisi: nomi distinti)
-# ---------------------------------------------------------------------------
+# Paths: per-tour artifacts; raw CSVs are shared but use distinct names.
 ROOT_DIR = Path(__file__).parent
 DATA_DIR = ROOT_DIR / "data"
-RAW_DIR = DATA_DIR / "raw"            # atp_matches_*.csv / wta_matches_*.csv (non collidono)
-TOUR_DIR = DATA_DIR / TOUR           # processed/model/odds/output per-tour
+RAW_DIR = DATA_DIR / "raw"            # atp_matches_*.csv / wta_matches_*.csv (no collision)
+TOUR_DIR = DATA_DIR / TOUR           # per-tour processed/model/odds/output
 PROCESSED_DIR = TOUR_DIR / "processed"
 MODEL_PATH = TOUR_DIR / "model.json"
 
 for _d in (RAW_DIR, PROCESSED_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# Dati Sackmann (repo tennis_atp / tennis_wta)
-# ---------------------------------------------------------------------------
+# Sackmann data (tennis_atp / tennis_wta repos)
 SACKMANN_BASE_URL = (
     f"https://raw.githubusercontent.com/JeffSackmann/tennis_{TOUR}/master/"
     f"{TOUR}_matches_{{year}}.csv"
 )
 
-# Anni da scaricare: dal 2005 all'anno CORRENTE (cosi' il 2026/2027/... entrano
-# in automatico). Il repo Sackmann su GitHub si aggiorna in stagione (lag ~1 sett.).
+# Years to download: from 2005 to the CURRENT year (so 2026/2027/... are picked up
+# automatically). The Sackmann GitHub repo updates in-season (lag ~1 week).
 CURRENT_YEAR = date.today().year
 YEARS = list(range(2005, CURRENT_YEAR + 1))
 
-# Quanti degli ultimi anni ri-scaricare sempre (in-season vengono aggiornati)
+# How many of the most recent years to always re-download (updated in-season)
 REFRESH_RECENT_YEARS = 2
 
-# Anni considerati burn-in (NON usati per training/test, solo per scaldare ELO)
+# Years treated as burn-in (NOT used for training/test, only to warm up ELO)
 BURNIN_END_YEAR = 2009
 
-# Split temporale (chiusura inclusiva). Rolla in avanti: le ultime 2 stagioni
-# restano HOLDOUT (test) per decidere se bettare; il resto allena.
-TRAIN_END_YEAR = CURRENT_YEAR - 3   # es. 2026 -> train fino a 2023
-VAL_END_YEAR = CURRENT_YEAR - 2     # es. 2024 (early stopping + calibrazione)
-TEST_END_YEAR = CURRENT_YEAR        # es. 2025-2026 held out
+# Temporal split (inclusive end). Rolls forward: the last 2 seasons stay as
+# HOLDOUT (test) for the betting decision; the rest is used for training.
+TRAIN_END_YEAR = CURRENT_YEAR - 3   # e.g. 2026 -> train up to 2023
+VAL_END_YEAR = CURRENT_YEAR - 2     # e.g. 2024 (early stopping + calibration)
+TEST_END_YEAR = CURRENT_YEAR        # e.g. 2025-2026 held out
 
-# ---------------------------------------------------------------------------
-# ELO
-# ---------------------------------------------------------------------------
 ELO_INITIAL = 1500.0
-ELO_K_BASE = 32.0  # K-factor base
-# K decresce con il numero di match giocati: K = K_BASE / (1 + matches/SCALE)^EXP
+ELO_K_BASE = 32.0  # base K-factor
+# K decays with matches played: K = K_BASE / (1 + matches/SCALE)^EXP
 ELO_K_DECAY_SCALE = 100.0
 ELO_K_DECAY_EXP = 0.4
-# K per la versione surface-specific (un po' più alto perché meno dati)
+# K for the surface-specific version (slightly higher because less data)
 ELO_K_SURFACE = 36.0
 
-# ---------------------------------------------------------------------------
-# Feature engineering
-# ---------------------------------------------------------------------------
-RECENT_FORM_WINDOW = 10  # ultimi N match per "forma"
-SERVE_WINDOW = 20        # ultimi N match per le statistiche rolling di servizio/risposta
-H2H_MIN_MATCHES = 1       # numero minimo per usare H2H come feature
+RECENT_FORM_WINDOW = 10  # last N matches for "form"
+SERVE_WINDOW = 20        # last N matches for rolling serve/return statistics
+H2H_MIN_MATCHES = 1       # minimum count to use H2H as a feature
 
-# Seed per la randomizzazione dei lati p1/p2
+# Seed for the p1/p2 side randomization
 RANDOM_SEED = 42
 
-# ---------------------------------------------------------------------------
-# XGBoost
-# ---------------------------------------------------------------------------
 XGB_PARAMS = {
     "objective": "binary:logistic",
     "eval_metric": ["logloss", "error"],

@@ -1,6 +1,6 @@
 """
-Esperimento: LightGBM LambdaRank vs CatBoost binary.
-Task naturale = ranking intra-gara (NDCG@3), non binary classification.
+Experiment: LightGBM LambdaRank vs CatBoost binary.
+Natural task = intra-race ranking (NDCG@3), not binary classification.
 """
 from __future__ import annotations
 
